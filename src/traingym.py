@@ -72,7 +72,7 @@ if __name__ == '__main__':
     check_env(env)
     start_time = now()
     print('Start Training >>[',start_time,']')
-    train(env, args.timesteps, args.save_as, args.device)
+    train(env, args.timesteps,  os.path.join('pie', args.save_as) , args.device)
     end_time = now()
     print('[',end_time,']<< End Training')
     print('__[',end_time - start_time,']__')

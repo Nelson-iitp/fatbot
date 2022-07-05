@@ -53,7 +53,7 @@ if __name__ == '__main__':
 
     #render_modes=[ 'env', 'rew', 'xray', 'xray_', 'dray', 'dray_', 'sen_' ]
     env.test( 
-        model=(AGENT.load(args.policy) if args.policy else None), 
+        model=(AGENT.load(os.path.join('pie', args.policy)) if args.policy else None), 
         episodes=args.episodes, 
         deterministic=bool(args.deterministic),
         render_modes=render_modes)
