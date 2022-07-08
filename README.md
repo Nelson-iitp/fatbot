@@ -11,11 +11,17 @@ https://github.com/Nelson-iitp/fatbot/blob/main/fig/vid_ppo_world_x4_1.mp4
 </video>
 
 ### Sample World with 5 bots
+
+https://github.com/Nelson-iitp/fatbot/blob/main/fig/vid_ppo_world_x5_1.mp4
+
 <video controls>
   <source src="fig/vid_ppo_world_x5_1.mp4" type="video/mp4">
 </video>
 
 ### Sample World with 6 bots
+
+https://github.com/Nelson-iitp/fatbot/blob/main/fig/vid_ppo_world_x6_1.mp4
+
 <video controls>
   <source src="fig/vid_ppo_world_x6_1.mp4" type="video/mp4">
 </video>
