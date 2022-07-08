@@ -45,7 +45,37 @@ class REMAP:
     def in2map(self, i):
         return ((i-self.Li)*self.Dm/self.Di) + self.Lm
 
+class JSON:
+    import json # load only when called
+    def save(path, data_dict):
+        """ saves a dict to disk in json format """
+        with open(path, 'w') as f:
+            f.write(__class__.json.dumps(data_dict, sort_keys=False, indent=4))
+        return path
+    def load(path):
+        """ returns a dict from a json file """
+        data_dict = None
+        with open(path, 'r') as f:
+            data_dict = __class__.json.loads(f.read())
+        return data_dict
 
+def sip_video(image_folder, video_path = 'video.avi'):
+    # assume all plots have been saved from spyder's ipython console like 'Figure <datetime> (n).png' in the image folder
+    # NOTE: after converting to video, we can reduce its size by converting using VLC - File>Convert/Save>  set resoultion=0.5
+    import cv2, os
+    x = np.array(os.listdir(image_folder))
+    y = np.argsort(np.array([ i.split("(")[1].split(")")[0] for i in x ]).astype(np.int64))
+    images = x[y]
+    frame = cv2.imread(os.path.join(image_folder, images[0]))
+    height, width, _ = frame.shape
+    video = cv2.VideoWriter(video_path, 0, 1, (width,height))
+    for image in images:
+        video.write(cv2.imread(os.path.join(image_folder, image)))
+    cv2.destroyAllWindows()
+    video.release()
+
+
+        
 """ARCHIVE
 
 def get_hspace(n, dtype, shapeL, lowL=None, highL=None):
