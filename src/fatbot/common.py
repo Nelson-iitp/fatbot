@@ -15,7 +15,6 @@ def get_nspace(n, dtype, shape, low=None, high=None):
 def get_angle(P):
     # determin quadrant
     d = np.linalg.norm(P, 2) # np.sqrt(x**2 + y**2)
-    assert(d>0)
     #q = 0
     if P[0]>=0:
         if P[1]>=0: #q=1
@@ -59,12 +58,20 @@ class JSON:
             data_dict = __class__.json.loads(f.read())
         return data_dict
 
-def sip_video(image_folder, video_path = 'video.avi'):
-    # assume all plots have been saved from spyder's ipython console like 'Figure <datetime> (n).png' in the image folder
+def image2video(image_folder):
+    # assume all plots have been saved like: *n.png (*=any, n=0,1,2...)
     # NOTE: after converting to video, we can reduce its size by converting using VLC - File>Convert/Save>  set resoultion=0.5
     import cv2, os
-    x = np.array(os.listdir(image_folder))
-    y = np.argsort(np.array([ i.split("(")[1].split(")")[0] for i in x ]).astype(np.int64))
+    file_list = []
+    for f in os.listdir(image_folder):
+        if f.lower().endswith('.png'):
+            file_list.append(f)
+    if not file_list:
+        print(f'Image Folder is Empty!')
+        return
+    video_path = os.path.join(os.path.dirname(image_folder), f'{os.path.basename(image_folder)}.avi')
+    x = np.array(file_list)
+    y = np.argsort(np.array([ int(i.split(".")[0][-1]) for i in x ]).astype(np.int64))
     images = x[y]
     frame = cv2.imread(os.path.join(image_folder, images[0]))
     height, width, _ = frame.shape

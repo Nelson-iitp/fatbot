@@ -1,11 +1,12 @@
 #==============================================================
 import numpy as np
+#import matplotlib.pyplot as plt
+from matplotlib.patches import Circle
 from .core import World
 #==============================================================
 
 class WR4(World):
 
-    """ Section: Reward Signal """
 
     def is_done(self):
         return bool( (self.ts>=self._max_episode_steps) or ( self.n_alive < self.N_BOTS)  )
@@ -77,8 +78,12 @@ class WR4x(WR4):
 
 
 class WR5o(World):
-
-    """ Section: Reward Signal """
+    TARGET_RADIUS = 0.0
+    def render_state_handle(self, ax):
+        if self.TARGET_RADIUS>0:
+            ax.add_patch( # target circle
+                Circle(   ( 0, 0 ), ( self.TARGET_RADIUS ),    # 2-tuple center, # float radius
+                    color='black', linewidth=0.5, fill=False, linestyle='dashed'))
 
     def is_done(self):
         return bool( (self.ts>=self._max_episode_steps) or ( self.n_alive < self.N_BOTS)  )
