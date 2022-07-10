@@ -1,0 +1,1 @@
+python38 -m pip uninstall fatbot

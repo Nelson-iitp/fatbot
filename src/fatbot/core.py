@@ -4,17 +4,11 @@ from math import ceil, inf, pi, sqrt
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 import gym
+from io import BytesIO
+import os, cv2
+from enum import IntEnum
 from .common import get_nspace, get_angle, REMAP
 #==============================================================
-class Arena:
-    def __init__(self, 
-                    name, 
-                    x_range,        # ranges from +x to -x
-                    y_range,        # ranges from +y to -y
-                    horizon,        # max timesteps
-                ) -> None:
-        self.name, self.x_range, self.y_range, self.horizon =  \
-             name,      x_range,      y_range,      horizon 
 
 class Swarm:
     default_bot_colors = [ 'red', 'blue', 'green', 'gold',   'cyan', 'magenta', 'purple', 'brown' ]
@@ -22,6 +16,8 @@ class Swarm:
     default_bot_markers = ['o' for _ in range(default_n_bots)]
     def __init__(self, 
                     name,               # identifier
+                    x_range,            # ranges from +x to -x
+                    y_range,            # ranges from +y to -y
                     n_bots,             # number of bots in swarm
                     bot_radius,         # meters - fat-bot body radius
                     scan_radius,        # scannig radius of onboard sensor (neighbourhood)
@@ -30,15 +26,18 @@ class Swarm:
                     delta_speed,        # [+/-] constant linear acceleration (throttle-break) - keep 0 for direct action mode
                     sensor_resolution,  # choose based on scan distance, use form: n/pi , pixel per m
                     min_bots_alive,     # min no. bots alive, below which world will terminate # keep zero for all alive condition
+                    horizon,            # max timesteps
                 ) -> None:
         assert ((n_bots<=self.default_n_bots) and (n_bots>0))
-        self.name, self.n_bots, self.bot_radius, self.scan_radius, self.safe_distance, self.speed_limit, self.delta_speed, self.sensor_resolution = \
-             name,      n_bots,      bot_radius,      scan_radius,      safe_distance,      speed_limit,      delta_speed,      sensor_resolution    
+        self.name, self.x_range, self.y_range, self.horizon =  \
+             name,      x_range,      y_range,      horizon 
+        self.n_bots, self.bot_radius, self.scan_radius, self.safe_distance, self.speed_limit, self.delta_speed, self.sensor_resolution = \
+             n_bots,      bot_radius,      scan_radius,      safe_distance,      speed_limit,      delta_speed,      sensor_resolution    
         self.bot_colors = self.default_bot_colors[0:self.n_bots]
         self.bot_names = self.default_bot_colors[0:self.n_bots]
         self.bot_markers = self.default_bot_markers[0:self.n_bots]
         self.min_bots_alive = min_bots_alive
-        self.initial_states= None
+        self.initial_states= [] #<--- after init, append to this list
 
 class World(gym.Env):
     
@@ -47,17 +46,47 @@ class World(gym.Env):
     ACTION_DTYPE =   np.float32
     REWARD_DTYPE =   np.float32
 
-    def __init__(self, arena, swarm, enable_imaging, seed=None) -> None:
+    def info(self):
+        return f'{self.name} @ {str(self.mode)} \n Dim: ( X={self.X_RANGE*2}, Y={self.Y_RANGE*2}, H={self._max_episode_steps} ),  Imaging: [{self.enable_imaging}],  History: [{self.record_reward_hist}]'
+    def __init__(self, mode, swarm, enable_imaging=True, horizon=0, seed=None, custom_XY=None, 
+                    render_xray_cmap='hot', render_dray_cmap='copper',  render_dpi=None,
+                    render_figure_ratio=1.0, render_bounding_width=0.05) -> None:
         super().__init__()
-        self.arena = arena
+        self.mode = mode
         self.swarm = swarm
         self.enable_imaging = enable_imaging
+        self._max_episode_steps = (horizon if horizon>0 else inf)
         self.rng = np.random.default_rng(seed)
-        self.name = f'{self.arena.name}/{self.swarm.name}'
+
+        if custom_XY is None:
+            self.X_RANGE, self.Y_RANGE = float(self.swarm.x_range), float(self.swarm.y_range)
+        else:
+            self.X_RANGE, self.Y_RANGE = float(custom_XY[0]), float(custom_XY[1])
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         self.build() # call default build
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        # render related
+        self.name = f'-({self.swarm.name})-'
+        self.render_xray_cmap = render_xray_cmap
+        self.render_dray_cmap = render_dray_cmap
+        self.render_figure_ratio = render_figure_ratio
+        self.render_bounding_width = render_bounding_width
+        self.record_reward_hist = self.mode > 0
+        self.render_dpi = render_dpi
+
+        # for rendering
+        self.MAX_SPEED = sqrt(2) * self.SPEED_LIMIT # note - this is magnitude of MAX velocity vector
+        self.colors = self.swarm.bot_colors
+        self.markers = self.swarm.bot_markers
+        self.names = self.swarm.bot_names
+        self.img_aspect = self.SENSOR_IMAGE_SIZE/self.SENSOR_RESOULTION # for rendering
+        self.arcDivs = 4 + 1  # no of divisions on sensor image
+        self.arcTicks = np.array([ (int( i * self.SENSOR_UNIT_ARC), round(i*180/pi, 2)) \
+                                    for i in np.linspace(0, 2*np.pi, self.arcDivs) ])
+        print(f'[*] World Created :: {self.info()}')
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
     """ Section: Build """
 
@@ -69,14 +98,9 @@ class World(gym.Env):
         self.build_vectors()
         self.set_reward_signal()        #<----- implement in inherited class
         self.build_reward_signal()
-        self.build_meta() #<----- this can be called after __init___ to override defaults
+        
 
     def build_params(self):
-        # arena
-        self._max_episode_steps = (self.arena.horizon if self.arena.horizon>0 else inf)
-        self.X_RANGE = float(self.arena.x_range)
-        self.Y_RANGE =  float(self.arena.y_range)
-
         # swarm
         self.N_BOTS = int(self.swarm.n_bots)
         self.BOT_RADIUS = float(self.swarm.bot_radius)
@@ -92,15 +116,6 @@ class World(gym.Env):
         self.initial_states = self.swarm.initial_states
         self.initial_states_count = len(self.initial_states)
         
-        # for rendering
-        self.MAX_SPEED = sqrt(2) * self.SPEED_LIMIT # note - this is magnitude of MAX velocity vector
-        self.colors = self.swarm.bot_colors
-        self.markers = self.swarm.bot_markers
-        self.names = self.swarm.bot_names
-        self.img_aspect = self.SENSOR_IMAGE_SIZE/self.SENSOR_RESOULTION # for rendering
-        self.arcDivs = 4 + 1  # no of divisions on sensor image
-        self.arcTicks = np.array([ (int( i * self.SENSOR_UNIT_ARC), round(i*180/pi, 2)) \
-                                    for i in np.linspace(0, 2*np.pi, self.arcDivs) ])
         return
 
     def build_observation_space(self):
@@ -208,32 +223,13 @@ class World(gym.Env):
         # for recording reward hist
         self.reward_rng = np.random.default_rng(None)
 
-    def build_meta(self,  
-                    xray_cmap='hot', dray_cmap='copper', 
-                    record_reward_hist=True, show_plots=True,
-                    render_figure_ratio=1.0, render_bounding_width=0.05):
-        self.sensor_meta_xray = {'cmap': xray_cmap, 'vmin': 0, 'vmax': self.N_BOTS}
-        self.sensor_meta_dray = {'cmap': dray_cmap, 'vmin': 0, 'vmax': self.SCAN_RADIUS}
-        self.render_figure_ratio = render_figure_ratio
-        self.render_bounding_width = render_bounding_width
-        self.record_reward_hist = record_reward_hist
-        self.show_plots = show_plots
-        # make render functions
-        self.render_modes = {
-            'all':      dict(local_sensors=True,  reward_signal=True),
-            'env':      dict(local_sensors=False, reward_signal=False),
-            'rew':      dict(local_sensors=False, reward_signal=True),
-            'sen':      dict(local_sensors=True,  reward_signal=False),
-            }
-        return
-
-
-
     """ Section: State Dynamics """
 
     def kill_bots(self, *bots):
         for b in bots:
             self.alive[b] = False
+            self.dmat[b,:]=0
+            self.dmat[:,b]=0
             self.sensor_data[b, :, :] = 0 
             if self.enable_imaging:
                 self.img_xray[b,:]=0
@@ -358,6 +354,7 @@ class World(gym.Env):
         return bool( (self.ts>=self._max_episode_steps) or ( self.n_alive < self.MIN_BOTS_ALIVE)  )
 
     def reset(self):
+        #print('RESET:', self.record_reward_hist, self.mode)
         # reset - choose randomly from known initial state distribution - state numbers start at 1
         self.choose_i_state = self.rng.integers(0, self.initial_states_count)
         for i,p in  enumerate(self.initial_states[self.choose_i_state]):
@@ -443,68 +440,38 @@ class World(gym.Env):
         
     """ Section: Rendering """
 
-    def render_sensor_image(self, n, use_xray=False, show_ticks=True):
-        if not self.enable_imaging:
-            return None, ""
-        fig,_ = plt.figure()
-        if show_ticks:
-            plt.xticks(self.arcTicks[:,0], self.arcTicks[:,1] )
-            
-            plt.grid(axis='both')
 
-        if use_xray:
-            plt.imshow(np.reshape( (self.img_xray[n, :]), (1, self.SENSOR_IMAGE_SIZE) ), aspect=self.img_aspect, **self.sensor_meta_xray)
-            arcm = np.where(self.img_oray[n]>0)[0]
-            for arcpt in arcm:
-                plt.scatter( [arcpt], [0], color='white', marker='d') # self.img_oray[n,arcpt:arcpt+1]
-                # f'${self.img_oray[n,arcpt]}$'
-                plt.annotate(f'{self.img_oray[n,arcpt]}', xy=(arcpt,0.4))
-            plt.title("X-Ray: "+self.names[n])
-        else:
-            plt.imshow(np.reshape( (self.img_dray[n, :]), (1, self.SENSOR_IMAGE_SIZE) ), aspect=self.img_aspect, **self.sensor_meta_dray)
-            plt.title("D-Ray: "+self.names[n])
-        
-        
-        (plt.show() if self.show_plots else plt.close())
-        return fig, "render_sensor_image_local"
-
-    def render(self, local_sensors=True, reward_signal=True):
-        # to render -
-        #       main world (arena)
-        #       reward signal bar x1
-        #       reward signal plot x3
-        #       sensor data x2
-        #       local sensors x n_bots
+    def render(self, local_sensors=True, reward_signal=True, show_plots=True):
 
         if local_sensors:
             if reward_signal:
                 fig = plt.figure(
-                    constrained_layout=True,
+                    layout='constrained',
                     figsize=(   (self.X_RANGE)*2*self.render_figure_ratio *5/3 ,
-                            (self.Y_RANGE)*2*self.render_figure_ratio   ))
+                            (self.Y_RANGE)*2*self.render_figure_ratio   ), dpi=self.render_dpi)
                 subfigs = fig.subfigures(1, 3, wspace=0.02, width_ratios=[1, 3, 1]) # row, col
                 sf_sensor_data, sf_state, sf_reward = subfigs[0], subfigs[1], subfigs[2]
             else:
                 fig = plt.figure(
-                    constrained_layout=True,
+                    layout='constrained',
                     figsize=(   (self.X_RANGE)*2*self.render_figure_ratio *4/3 ,
-                            (self.Y_RANGE)*2*self.render_figure_ratio   ))
+                            (self.Y_RANGE)*2*self.render_figure_ratio   ), dpi=self.render_dpi)
                 subfigs = fig.subfigures(1, 2, wspace=0.02, width_ratios=[1, 3]) # row, col
                 sf_sensor_data, sf_state = subfigs[0], subfigs[1]
 
         else:
             if reward_signal:
                 fig = plt.figure(
-                    constrained_layout=True,
+                    layout='constrained',
                     figsize=(   (self.X_RANGE)*2*self.render_figure_ratio *4/3 ,
-                            (self.Y_RANGE)*2*self.render_figure_ratio   ))
+                            (self.Y_RANGE)*2*self.render_figure_ratio   ), dpi=self.render_dpi)
                 subfigs = fig.subfigures(1, 2, wspace=0.02, width_ratios=[3, 1]) # row, col
                 sf_state, sf_reward = subfigs[0], subfigs[1]
             else:
                 fig = plt.figure(
-                    constrained_layout=True,
+                    layout='constrained',
                     figsize=(   (self.X_RANGE)*2*self.render_figure_ratio,
-                            (self.Y_RANGE)*2*self.render_figure_ratio   ))
+                            (self.Y_RANGE)*2*self.render_figure_ratio   ), dpi=self.render_dpi)
                 subfigs = fig.subfigures(1, 1, wspace=0.02, width_ratios=[1,]) # row, col
                 sf_state = subfigs
 
@@ -576,7 +543,7 @@ class World(gym.Env):
         ax.vlines(self.X_RANGE,  -self.Y_RANGE, self.Y_RANGE,  color='black', linewidth=0.5, linestyle='dashed'  )
         ax.hlines(-self.Y_RANGE,  -self.X_RANGE, self.X_RANGE,  color='black', linewidth=0.5, linestyle='dashed'  )
         ax.hlines(self.Y_RANGE,  -self.X_RANGE, self.X_RANGE,  color='black', linewidth=0.5, linestyle='dashed'  )
-        self.render_state_handle(ax)
+        self.render_state_hook(ax)
         for n in range(self.N_BOTS):
         #--------------------------------------------------------------------------------------------------------------
             botx, boty = self.x[n, 0], self.y[n, 0]
@@ -683,20 +650,143 @@ class World(gym.Env):
                 ax_xray.set_yticks(range(self.N_BOTS), self.names)
                 ax_xray.set_xticks(self.arcTicks[:,0], self.arcTicks[:,1] )
                 ax_xray.grid(axis='both')
-                ax_xray.imshow(self.img_xray, aspect=self.img_aspect, **self.sensor_meta_xray)
+                ax_xray.imshow(self.img_xray, aspect=self.img_aspect, cmap= self.render_xray_cmap, vmin= 0, vmax= self.N_BOTS )
                 ax_xray.set_title("X-Ray: All Sensors")
                 
                 ax_dray.set_yticks(range(self.N_BOTS), self.names)
                 ax_dray.set_xticks(self.arcTicks[:,0], self.arcTicks[:,1] )
                 ax_dray.grid(axis='both')
-                ax_dray.imshow(self.img_dray, aspect=self.img_aspect, **self.sensor_meta_dray)
+                ax_dray.imshow(self.img_dray, aspect=self.img_aspect, cmap= self.render_dray_cmap, vmin= 0, vmax= self.SCAN_RADIUS )
                 ax_dray.set_title("D-Ray: All Sensors")
         
 
         
-        (plt.show() if self.show_plots else plt.close())
+        (plt.show() if show_plots else plt.close())
         return fig
 
 #==============================================================
-    def render_state_handle(self, ax):
+    def render_state_hook(self, ax):
         pass # <---- use 'ax' to render target points
+
+    def get_render_handler(self, 
+            render_mode,  # str 'all', 'env', 'rew', 'sen'
+            save_fig, # str - name of folder in ehich to save rendered plots or name of video if make_video is true (auto append .avi) 
+            save_dpi, # 'figure' or a value for dpi - this is passed to fig.savefig() and overwrites render_dpi 
+            make_video # bool - if True, makes a video of all rendered frames
+            ):
+        return RenderHandler(self, render_mode=render_mode, save_fig=save_fig, save_dpi=save_dpi, make_video=make_video)
+
+class RenderHandler:
+
+    render_modes = { #<-- define only when rendering
+        'all':      lambda s :dict(local_sensors=True,  reward_signal=True, show_plots=s),
+        'env':      lambda s :dict(local_sensors=False, reward_signal=False, show_plots=s),
+        'rew':      lambda s :dict(local_sensors=False, reward_signal=True, show_plots=s),
+        'sen':      lambda s :dict(local_sensors=True,  reward_signal=False, show_plots=s),
+        }
+    def __init__(self, env, render_mode, save_fig, save_dpi, make_video) -> None:
+        self.env=env
+        self.render_mode = render_mode
+        self.save_fig=save_fig
+        self.save_dpi = save_dpi
+        self.make_video=make_video
+
+        # make render functions
+        self.Start = self.noop
+        self.Render = self.noop
+        self.Stop = self.noop
+        if render_mode:
+            self.render_kwargs = self.render_modes[self.render_mode](not(save_fig))
+            if save_fig:
+                if make_video:
+                    self.Start = self.Start_Video
+                    self.Render = self.Render_Video
+                    self.Stop = self.Stop_Video
+                else:
+                    self.Start = self.Start_Image
+                    self.Render = self.Render_Image
+            else:
+                self.Render = self.Render_Show
+
+    def noop(self):
+        pass
+
+    def Render_Show(self):
+        self.env.render(**self.render_kwargs)
+
+    def Start_Image(self):
+        os.makedirs(self.save_fig, exist_ok=True)
+        self.n=0
+    
+    def Render_Image(self):
+        self.env.render(**self.render_kwargs).savefig(os.path.join(self.save_fig, f'{self.n}.png'), 
+                        dpi=self.save_dpi, transparent=False )     
+        self.n+=1
+
+    def Start_Video(self):
+        # video handler requires 1 env.render to get the shape of env-render figure
+        self.buffer = BytesIO()
+
+        print(f'[{__class__.__name__}]:: Reseting environment for first render...')
+        self.env.reset()
+
+        #self.buffer.seek(0) # seek zero before writing - not required on first write
+        self.env.render(**self.render_kwargs).savefig( self.buffer, dpi=self.save_dpi, transparent=False ) 
+        self.buffer.seek(0) # seek zero before reading
+        frame = cv2.imdecode(np.asarray(bytearray(self.buffer.read()), dtype=np.uint8), cv2.IMREAD_COLOR)
+        self.height, self.width, _ = frame.shape
+        self.video_file_name = self.save_fig+'.avi'
+        self.video = cv2.VideoWriter(self.video_file_name , 0, 1, (self.width, self.height))
+        # self.video.write(frame) #<--- do not write yet
+        print(f'[{__class__.__name__}]:: Started Video @ [{self.video_file_name}] :: Size [{self.width} x {self.height}]')
+
+    def Render_Video(self):
+        self.buffer.seek(0) # seek zero before writing 
+        self.env.render(**self.render_kwargs).savefig( self.buffer, dpi=self.save_dpi, transparent=False ) 
+        self.buffer.seek(0) # seek zero before reading
+        self.video.write(cv2.imdecode(np.asarray(bytearray(self.buffer.read()), dtype=np.uint8), cv2.IMREAD_COLOR))
+
+    def Stop_Video(self):
+        cv2.destroyAllWindows()
+        self.video.release()
+        self.buffer.close()
+        del self.buffer
+        print(f'[{__class__.__name__}]:: Stopped Video @ [{self.video_file_name}]')
+
+class RunMode(IntEnum):
+    no_hist=-1
+    training=0
+    testing=1
+
+"""
+ARCHIVE
+
+
+    def render_sensor_image(self, n, use_xray=False, show_ticks=True):
+        if not self.enable_imaging:
+            return None, ""
+        fig,_ = plt.figure()
+        if show_ticks:
+            plt.xticks(self.arcTicks[:,0], self.arcTicks[:,1] )
+            
+            plt.grid(axis='both')
+
+        if use_xray:
+            plt.imshow(np.reshape( (self.img_xray[n, :]), (1, self.SENSOR_IMAGE_SIZE) ), aspect=self.img_aspect, 
+                            cmap= self.render_xray_cmap, vmin= 0, vmax= self.N_BOTS ) 
+            arcm = np.where(self.img_oray[n]>0)[0]
+            for arcpt in arcm:
+                plt.scatter( [arcpt], [0], color='white', marker='d') # self.img_oray[n,arcpt:arcpt+1]
+                # f'${self.img_oray[n,arcpt]}$'
+                plt.annotate(f'{self.img_oray[n,arcpt]}', xy=(arcpt,0.4))
+            plt.title("X-Ray: "+self.names[n])
+        else:
+            plt.imshow(np.reshape( (self.img_dray[n, :]), (1, self.SENSOR_IMAGE_SIZE) ), aspect=self.img_aspect, 
+                            cmap= self.render_dray_cmap, vmin= 0, vmax= self.SCAN_RADIUS )
+            plt.title("D-Ray: "+self.names[n])
+        
+        
+        (plt.show() if self.show_plots else plt.close())
+        return fig, "render_sensor_image_local"
+
+"""

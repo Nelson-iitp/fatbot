@@ -58,7 +58,7 @@ class JSON:
             data_dict = __class__.json.loads(f.read())
         return data_dict
 
-def image2video(image_folder):
+def image2video(image_folder, video_name=''):
     # assume all plots have been saved like: *n.png (*=any, n=0,1,2...)
     # NOTE: after converting to video, we can reduce its size by converting using VLC - File>Convert/Save>  set resoultion=0.5
     import cv2, os
@@ -69,9 +69,11 @@ def image2video(image_folder):
     if not file_list:
         print(f'Image Folder is Empty!')
         return
-    video_path = os.path.join(os.path.dirname(image_folder), f'{os.path.basename(image_folder)}.avi')
+
+    video_path = os.path.join(os.path.dirname(image_folder), 
+        (f'{video_name}.avi' if video_name else  f'{os.path.basename(image_folder)}.avi'))
     x = np.array(file_list)
-    y = np.argsort(np.array([ int(i.split(".")[0][-1]) for i in x ]).astype(np.int64))
+    y = np.argsort(np.array([ int(i.split(".")[0]) for i in x ]).astype(np.int64))
     images = x[y]
     frame = cv2.imread(os.path.join(image_folder, images[0]))
     height, width, _ = frame.shape
@@ -82,7 +84,10 @@ def image2video(image_folder):
     video.release()
 
 
-        
+
+
+
+
 """ARCHIVE
 
 def get_hspace(n, dtype, shapeL, lowL=None, highL=None):
