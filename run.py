@@ -18,7 +18,7 @@ def envF(testing):
         enable_imaging=True,            #<------ enables sensor-ray imaging, disbale if not required
         seed=None,                      #<------ prng seed
         custom_XY=None,                 #<------ custom XY-range for world (by default copies from swarm, change if needed)
-
+        delta_reward = False,            #<------ if True, Uses delta (deifference) of rewards (reward improvement)
 
         #<-------------- render args 
         record_reward_hist=testing,        #<------ if True, records reward history per episode (and renders it as well)
@@ -44,13 +44,13 @@ agent = fb.Agent(
 
 #%% [training]
 
-agent.train(total_timesteps=150_000) #<---- trains on call
+agent.train(total_timesteps=15_00) #<---- trains on call
 
 #%% [testing]
 
 average_return, total_steps = \
 agent.test(
-    episodes=2,                     #<----- total no of episodes
+    episodes=1,                     #<----- total no of episodes
     steps=200,                      #<----- steps per episodes (0 for inifite horizon - actual horizon = min(steps, env.horizon)
     deterministic=False,             #<----- arg for model.predict()
     render_mode='all',              #<----- render_mode = all, env, sen, rew  (keep blank for no rendering)

@@ -49,9 +49,12 @@ class World(gym.Env):
     REWARD_DTYPE =   np.float32
 
     def info(self):
-        return f'{self.name} \n Dim: ( X={self.X_RANGE*2}, Y={self.Y_RANGE*2}, H={self._max_episode_steps} ),  Imaging: [{self.enable_imaging}],  History: [{self.record_reward_hist}]'
+        return \
+            f'{self.name} :: Dim: ( X={self.X_RANGE*2}, Y={self.Y_RANGE*2}, H={self._max_episode_steps} )' + \
+            f'\nDelta-Reward: [{self.delta_reward}],  Delta-Action: [{self.delta_action_mode}]' + \
+            f'\nImaging: [{self.enable_imaging}],  History: [{self.record_reward_hist}]'
     
-    def __init__(self, swarm, enable_imaging=True, horizon=0, seed=None, custom_XY=None, 
+    def __init__(self, swarm, enable_imaging=True, horizon=0, seed=None, custom_XY=None, delta_reward=True,
                     record_reward_hist=True, render_normalized_reward=True,
                     render_xray_cmap='hot', render_dray_cmap='copper',  render_dpi=None,
                     render_figure_ratio=1.0, render_bounding_width=0.05) -> None:
@@ -62,6 +65,7 @@ class World(gym.Env):
         self._max_episode_steps = (horizon if horizon>0 else inf)
         self.record_reward_hist = record_reward_hist
         self.render_normalized_reward = render_normalized_reward
+        self.delta_reward = delta_reward
         self.rng = np.random.default_rng(seed)
 
         if custom_XY is None:
@@ -388,6 +392,7 @@ class World(gym.Env):
         
         return self.base_observation
     
+    
     def step(self, action):
         self.base_actuator[:] = self.action_mapper.in2map(np.clip( action, self.action_space.low, self.action_space.high )) # copy actions
         self.actuator[np.where(self.alive==False)[0],:]=0 # not act on crahsed robots
@@ -407,17 +412,26 @@ class World(gym.Env):
 
         self.ts+=1
         self.done=self.is_done()
+
+        #**--**--**--**--**--**--**--**--**--**--**--**--**--**--**--**--**--**--**--**--**--**--
         if not self.done:
             # reward is based on wighted signal
             current_reward_signal = self.get_reward_signal()
             current_reward_signal_sum = np.sum(current_reward_signal)
-            # if current reward_signal is higher, then give +ve reward
-            self.step_reward = float(current_reward_signal_sum - self.reward_signal_sum) #np.sum((self.rsA - rsA) * self.rw8)
+            # in delta mode, if current reward_signal is higher, then give +ve reward
+        
+            self.step_reward = float( 
+                (current_reward_signal_sum - self.reward_signal_sum) \
+                    if self.delta_reward else \
+                current_reward_signal_sum ) 
+
+
             self.reward_signal[:] = current_reward_signal
             self.reward_signal_sum = current_reward_signal_sum
         else:
             self.step_reward=-1.0
-        
+        #**--**--**--**--**--**--**--**--**--**--**--**--**--**--**--**--**--**--**--**--**--**--
+
         self.cummulative_reward += self.step_reward
         if self.record_reward_hist:
             self.reward_hist[0].append(self.reward_signal_sum)
