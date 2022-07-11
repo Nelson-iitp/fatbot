@@ -820,12 +820,12 @@ class World(gym.Env):
 
     def get_render_handler(self, 
             render_mode,  # str 'all', 'env', 'rew', 'sen'
-            save_fig, # str - name of folder in ehich to save rendered plots or name of video if make_video is true (auto append .avi) 
+            save_as, # str - name of folder in ehich to save rendered plots or name of video if make_video is true (auto append .avi) 
             save_dpi, # 'figure' or a value for dpi - this is passed to fig.savefig() and overwrites render_dpi 
             make_video, # bool - if True, makes a video of all rendered frames
             video_fps,
             ):
-        return RenderHandler(self, render_mode=render_mode, save_fig=save_fig, save_dpi=save_dpi, make_video=make_video, video_fps=video_fps)
+        return RenderHandler(self, render_mode=render_mode, save_as=save_as, save_dpi=save_dpi, make_video=make_video, video_fps=video_fps)
 
 
 
@@ -838,10 +838,10 @@ class RenderHandler:
         'sen':      lambda s :dict(local_sensors=True,  reward_signal=False, show_plots=s, ),
         }
     
-    def __init__(self, env, render_mode, save_fig, save_dpi, make_video, video_fps) -> None:
+    def __init__(self, env, render_mode, save_as, save_dpi, make_video, video_fps) -> None:
         self.env=env
         self.render_mode = render_mode
-        self.save_fig=save_fig
+        self.save_as=save_as
         self.save_dpi = save_dpi
         self.make_video=make_video
         self.video_fps=video_fps
@@ -851,8 +851,8 @@ class RenderHandler:
         self.Render = self.noop
         self.Stop = self.noop
         if render_mode:
-            self.render_kwargs = self.render_modes[self.render_mode](not(save_fig))
-            if save_fig:
+            self.render_kwargs = self.render_modes[self.render_mode](not(save_as))
+            if save_as:
                 if make_video:
                     self.Start = self.Start_Video
                     self.Render = self.Render_Video
@@ -870,19 +870,17 @@ class RenderHandler:
         self.env.render(**self.render_kwargs)
 
     def Start_Image(self):
-        os.makedirs(self.save_fig, exist_ok=True)
+        os.makedirs(self.save_as, exist_ok=True)
         self.n=0
     
     def Render_Image(self):
-        self.env.render(**self.render_kwargs).savefig(os.path.join(self.save_fig, f'{self.n}.png'), 
+        self.env.render(**self.render_kwargs).savefig(os.path.join(self.save_as, f'{self.n}.png'), 
                         dpi=self.save_dpi, transparent=False )     
         self.n+=1
 
     def Start_Video(self):
         # video handler requires 1 env.render to get the shape of env-render figure
         self.buffer = BytesIO()
-
-        print(f'[{__class__.__name__}]:: Reseting environment for first render...')
         #self.env.reset()
 
         #self.buffer.seek(0) # seek zero before writing - not required on first write
@@ -890,7 +888,7 @@ class RenderHandler:
         self.buffer.seek(0) # seek zero before reading
         frame = cv2.imdecode(np.asarray(bytearray(self.buffer.read()), dtype=np.uint8), cv2.IMREAD_COLOR)
         self.height, self.width, _ = frame.shape
-        self.video_file_name = self.save_fig+'.avi'
+        self.video_file_name = self.save_as+'.avi'
 
         #                                   file,     fourcc, fps, size
         self.video = cv2.VideoWriter(self.video_file_name , 0, self.video_fps, (self.width, self.height)) 

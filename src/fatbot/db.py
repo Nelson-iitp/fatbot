@@ -134,7 +134,7 @@ class World_R4x(World): # world with four reward signals
 class World_R4o(World):
     def build_reward_scheme(self): 
         return dict( 
-            dis_target_radius=   1.0, 
+            dis_target_radius=  1.0, 
             all_unsafe=         1.0, 
             all_neighbour=      1.0, 
             occluded_neighbour= 1.0)
@@ -152,7 +152,7 @@ class World_R5x(World):
 class World_R5o(World):
     def build_reward_scheme(self):      
         return dict( 
-            dis_target_radius=   1.0, 
+            dis_target_radius=  1.0, 
             all_unsafe=         1.0, 
             all_neighbour=      1.0, 
             occluded_neighbour= 1.0, 
