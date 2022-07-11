@@ -2,6 +2,11 @@
 
 > A gym like environment for fat-robots in a 2-D world.
 
+<hr>
+
+> Refer `run.py` for an example using `stable_baseline3.PPO` agent.
+
+
 ### Sample World with 4 bots
 
 https://github.com/Nelson-iitp/fatbot/blob/main/fig/vid_ppo_world_x4_1.mp4
@@ -25,6 +30,8 @@ https://github.com/Nelson-iitp/fatbot/blob/main/fig/vid_ppo_world_x6_1.mp4
 <video controls>
   <source src="fig/vid_ppo_world_x6_1.mp4" type="video/mp4">
 </video>
+
+
 
 # World
 

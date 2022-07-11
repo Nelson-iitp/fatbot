@@ -86,9 +86,9 @@ def TEST(
     # end episodes
     renderer.Stop() #<--- close renderer
     test_history=np.array(test_history)
-    avg_return = np.average(test_history[:, 1])
+    average_return = np.average(test_history[:, 1])
     total_steps = np.sum(test_history[:, 0])
-    print(f'[--] End Epoch [{episodes}] episodes :: Avg Return: {avg_return}, Total Steps: {total_steps}')
+    print(f'[--] End Epoch [{episodes}] episodes :: Avg Return: {average_return}, Total Steps: {total_steps}')
     if episodes>1:
         fig, ax = plt.subplots(2, 1, figsize=(12,6))
         fig.suptitle(f'Test Results')
@@ -97,7 +97,7 @@ def TEST(
         ax[0].legend()
         ax[1].legend()
         plt.show()
-    return avg_return, total_steps
+    return average_return, total_steps
 
 class RandomPolicy:
     def __init__(self, action_space) -> None:

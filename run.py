@@ -9,7 +9,7 @@ import torch.nn as nn
 
 
 def envF(test):
-    from fatbot.db import World_Test as World #<-------------- fatbolt.World class
+    from fatbot.db import World_Default as World #<-------------- fatbolt.World class
     return World( # create and return an instance of World
         
         #<-------------- fatbot.Swarm instance (refer fatbot.db.GLOBAL_ISD)
@@ -28,7 +28,7 @@ def envF(test):
         render_xray_cmap='hot',         #<------ colormap arg for plt.imshow(xray) 
         render_dray_cmap='copper',      #<------ colormap arg for plt.imshow(dray)
         render_dpi=32,                  #<------ dpi arg for plt.figure()
-        render_figure_ratio=0.4,        #<------ figsize multiplier for arg for plt.figure()
+        render_figure_ratio=0.4,        #<------ figsize multiplier for plt.figure()
         render_bounding_width=0.05,     #<------ how much margin to leave b/w world boundary and figure boundary (%)
             )
 
