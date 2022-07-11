@@ -44,6 +44,7 @@ class REMAP:
     def in2map(self, i):
         return ((i-self.Li)*self.Dm/self.Di) + self.Lm
 
+
 class JSON:
     import json # load only when called
     def save(path, data_dict):

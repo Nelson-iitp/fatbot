@@ -3,7 +3,7 @@ import numpy as np
 from math import ceil, inf, pi, sqrt
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
-import gym
+import gym, gym.spaces
 from io import BytesIO
 import os, cv2
 from enum import IntEnum
@@ -27,6 +27,7 @@ class Swarm:
                     sensor_resolution,  # choose based on scan distance, use form: n/pi , pixel per m
                     min_bots_alive,     # min no. bots alive, below which world will terminate # keep zero for all alive condition
                     horizon,            # max timesteps
+                    target_radius=0.0,  # optinal
                 ) -> None:
         assert ((n_bots<=self.default_n_bots) and (n_bots>0))
         self.name, self.x_range, self.y_range, self.horizon =  \
@@ -37,6 +38,7 @@ class Swarm:
         self.bot_names = self.default_bot_colors[0:self.n_bots]
         self.bot_markers = self.default_bot_markers[0:self.n_bots]
         self.min_bots_alive = min_bots_alive
+        self.target_radius = target_radius
         self.initial_states= [] #<--- after init, append to this list
 
 class World(gym.Env):
@@ -47,15 +49,19 @@ class World(gym.Env):
     REWARD_DTYPE =   np.float32
 
     def info(self):
-        return f'{self.name} @ {str(self.mode)} \n Dim: ( X={self.X_RANGE*2}, Y={self.Y_RANGE*2}, H={self._max_episode_steps} ),  Imaging: [{self.enable_imaging}],  History: [{self.record_reward_hist}]'
-    def __init__(self, mode, swarm, enable_imaging=True, horizon=0, seed=None, custom_XY=None, 
+        return f'{self.name} \n Dim: ( X={self.X_RANGE*2}, Y={self.Y_RANGE*2}, H={self._max_episode_steps} ),  Imaging: [{self.enable_imaging}],  History: [{self.record_reward_hist}]'
+    
+    def __init__(self, swarm, enable_imaging=True, horizon=0, seed=None, custom_XY=None, 
+                    record_reward_hist=True, render_normalized_reward=True,
                     render_xray_cmap='hot', render_dray_cmap='copper',  render_dpi=None,
                     render_figure_ratio=1.0, render_bounding_width=0.05) -> None:
         super().__init__()
-        self.mode = mode
+        
         self.swarm = swarm
         self.enable_imaging = enable_imaging
         self._max_episode_steps = (horizon if horizon>0 else inf)
+        self.record_reward_hist = record_reward_hist
+        self.render_normalized_reward = render_normalized_reward
         self.rng = np.random.default_rng(seed)
 
         if custom_XY is None:
@@ -65,7 +71,8 @@ class World(gym.Env):
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         self.build() # call default build
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
+        # counter
+        self.episode = 0
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         # render related
         self.name = f'-({self.swarm.name})-'
@@ -73,7 +80,6 @@ class World(gym.Env):
         self.render_dray_cmap = render_dray_cmap
         self.render_figure_ratio = render_figure_ratio
         self.render_bounding_width = render_bounding_width
-        self.record_reward_hist = self.mode > 0
         self.render_dpi = render_dpi
 
         # for rendering
@@ -81,6 +87,7 @@ class World(gym.Env):
         self.colors = self.swarm.bot_colors
         self.markers = self.swarm.bot_markers
         self.names = self.swarm.bot_names
+        self.TARGET_RADIUS = swarm.target_radius
         self.img_aspect = self.SENSOR_IMAGE_SIZE/self.SENSOR_RESOULTION # for rendering
         self.arcDivs = 4 + 1  # no of divisions on sensor image
         self.arcTicks = np.array([ (int( i * self.SENSOR_UNIT_ARC), round(i*180/pi, 2)) \
@@ -96,7 +103,6 @@ class World(gym.Env):
         self.build_observation_space()
         self.build_action_space()
         self.build_vectors()
-        self.set_reward_signal()        #<----- implement in inherited class
         self.build_reward_signal()
         
 
@@ -212,16 +218,7 @@ class World(gym.Env):
             self.img_dray =  np.zeros((self.N_BOTS, self.SENSOR_IMAGE_SIZE ), dtype=np.int16)
         return
 
-    def build_reward_signal(self):
-        self.reward_w8 = self.reward_sign/self.reward_norms #<---- this gets multiplied by reward from environment
-        self.reward_signal_n = len(self.reward_labels)
-        self.reward_plot_x = np.arange(self.reward_signal_n)
-        self.reward_posw8 = np.where(self.reward_sign>0)[0]
-        self.reward_negw8 = np.where(self.reward_sign<0)[0]
-        self.reward_signal = np.zeros_like(self.reward_w8)
-        self.reward_limits = self.reward_sign * self.reward_norms
-        # for recording reward hist
-        self.reward_rng = np.random.default_rng(None)
+
 
     """ Section: State Dynamics """
 
@@ -353,10 +350,14 @@ class World(gym.Env):
     def is_done(self):
         return bool( (self.ts>=self._max_episode_steps) or ( self.n_alive < self.MIN_BOTS_ALIVE)  )
 
-    def reset(self):
-        #print('RESET:', self.record_reward_hist, self.mode)
+    def reset(self, starting_state=None):
+        self.episode += 1
         # reset - choose randomly from known initial state distribution - state numbers start at 1
-        self.choose_i_state = self.rng.integers(0, self.initial_states_count)
+        if starting_state is None:
+            self.choose_i_state = self.rng.integers(0, self.initial_states_count)
+        else:
+            self.choose_i_state = int(starting_state(self.episode))
+
         for i,p in  enumerate(self.initial_states[self.choose_i_state]):
             self.initial_observation[i, 0:2] = p # p = (x,y) 2-tuple
 
@@ -427,20 +428,157 @@ class World(gym.Env):
 
     """ Section: Reward Signal : implement in inherited classes """
 
-    def set_reward_signal(self): 
+    def build_reward_scheme(self): 
         # by default creates a -ve and a +ve reward signal and generates randomly
-        self.reward_labels =          ['+ve reward', '-ve reward']
-        self.reward_sign =  np.array( [      1,           -1     ], dtype=self.REWARD_DTYPE) # <--- +/- reward
-        self.reward_norms = np.array( [     10,           10     ], dtype=self.REWARD_DTYPE) # <--- maximum value of Reward
+        print('[!] Calling default build_reward_scheme function: Using Random Reward Signal')
+        return dict(
+            random_reward_pos = 1.0,
+            random_reward_neg = 1.0
+        )
+
+    def build_reward_signal(self):
+
+        reward_scheme = self.build_reward_scheme() 
+
+        max_dis_bots = ((self.X_RANGE**2+self.Y_RANGE**2)**0.5)*self.N_BOTS
+        max_n_bots = (self.N_BOTS-1)*self.N_BOTS
+
+        self.reward_data = dict(
+                              #  sign,      low,      high              label
+            random_reward_pos =    ( 1       -1,        1,                'R+'),
+            random_reward_neg =    ( -1      -1,        1,                'R-'),
+
+            # distance to target point <--- lower is better
+            dis_target_point =    (    -1,         0,       max_dis_bots,     'C2P-Target',     ),
+
+            # distance to target radius <--- lower is better
+            dis_target_radius =    (    -1,         0,       max_dis_bots,     'C2R-Target',     ),
+
+            # no of unsafe bots  <--- lower is better
+            all_unsafe =    (    -1,         0,       max_n_bots,       'Safe-Bots',    ),
+
+            # no of total neighbours  <--- higher is better
+            all_neighbour = (     1,         0,       max_n_bots,       'Neighbours'    ),
+
+            # no of occluded neighbours  <--- lower is better
+            occluded_neighbour = (    -1,         0,       max_n_bots,       'V-Neighbours'  ),
+
+            # occlusion ratio = occluded pixels / total pixels  <--- lower is better
+            occlusion_ratio =     (    -1,         0,       1,                'V-Ratio'       ),
+
+        )
+
+
+        reward_labels, rsign, rlow, rhigh, rw8, reward_caller   = [], [], [], [], [], []
+        for k,w in reward_scheme.items():
+            v = self.reward_data[k]
+            rsign.append( v[0] )
+            rlow.append( v[1] )
+            rhigh.append( v[2] )
+            reward_labels.append( v[3] )
+            rw8.append(w)
+            reward_caller.append( getattr(self, f'RS_{k}') )
+
+        self.reward_labels =   reward_labels
+        self.rsign = np.array( rsign, dtype=self.REWARD_DTYPE) # <--- +(higher is better) /-(loweris better) 
+        self.rlow = np.array(  rlow, dtype=self.REWARD_DTYPE) # <--- minimum value of Reward
+        self.rhigh = np.array( rhigh, dtype=self.REWARD_DTYPE) # <--- maximum value of Reward
+        self.rw8 = np.array(  rw8, dtype=self.REWARD_DTYPE)  #<---- this gets multiplied by reward from environment
+
+        self.reward_caller=reward_caller
+        if len (reward_caller)==0:
+            print(f'[!] Reward Signal is empty!')
+
+        #self.reward_posw8 = np.where(self.rsign>0)[0]
+        reward_negw8 = np.where(self.rsign<0)[0]
+        
+        mapper_low = np.copy(self.rlow)
+        mapper_low[reward_negw8] = self.rhigh[reward_negw8]
+
+        mapper_high = np.copy(self.rhigh)
+        mapper_high[reward_negw8] = self.rlow[reward_negw8]
+
+        self.r_dim = len(self.reward_labels)
+        
+        self.reward_mapper = REMAP(
+            Input_Range= (mapper_low,                mapper_high),
+            Mapped_Range=(np.zeros_like(mapper_low), np.ones_like(mapper_high)))
+        
+        self.reward_signal = np.zeros_like(self.rw8)
+        
+        self.reward_plot_x = np.arange(self.r_dim) # for render
+        self.reward_plot_y = np.max(self.rw8)
+        self.reward_rng = np.random.default_rng(None) # for recording reward hist
 
     def get_reward_signal(self):  # higher is better
-        # return self.reward_w8 * np.array(  ('n-tuple, no of reward signals, max at self.reward_norms') ,  dtype=self.REWARD_DTYPE)
-        return self.reward_w8 *  (self.reward_rng.random(size=(self.reward_signal_n,))*self.reward_norms)
-        
-        
+        return self.rw8 * self.reward_mapper.in2map(np.array( [ RF() for RF in self.reward_caller ], dtype=self.REWARD_DTYPE ))
+
+
+    # $-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-
+    """ Pre-defined reward signals """
+    # $-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-
+    
+    def RS_random_reward_pos(self):
+        return self.reward_rng.uniform(-1, 1)
+
+    def RS_random_reward_neg(self):
+        return self.reward_rng.uniform(-1, 1)
+
+    def RS_dis_target_point(self): 
+        return np.sum ([ np.linalg.norm( self.xy[n, :], 2 )  for n in range(self.N_BOTS) ])
+
+    def RS_dis_target_radius(self): 
+        return np.sum ([ np.abs(self.TARGET_RADIUS-np.linalg.norm( self.xy[n, :], 2 ))  for n in range(self.N_BOTS) ])
+
+    def RS_all_unsafe(self):
+        return len(np.where(  (self.dmat<self.SAFE_CENTER_DISTANCE) & (self.dmat>0)  ) [0])
+
+    def RS_all_neighbour(self):
+        return np.sum(self.alln)
+
+    def RS_occluded_neighbour(self):
+        return np.sum(self.occn)
+
+    def RS_occlusion_ratio(self):
+        return np.sum ([  (len(np.where(self.img_xray[n]>1)[0])/self.SENSOR_IMAGE_SIZE)  for n in range(self.N_BOTS) ])
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     """ Section: Rendering """
 
-
+    def sample_render_fig(self, local_sensors=True, reward_signal=True, **nullargs):
+        # NOTE: this is called by video renderer
+        if local_sensors:
+            if reward_signal:
+                fr_multiplier = 5/3
+            else:
+                fr_multiplier = 4/3
+        else:
+            if reward_signal:
+                fr_multiplier = 4/3
+            else:
+                fr_multiplier = 1
+        fig = plt.figure(
+            layout='constrained',
+            figsize=(   (self.X_RANGE)*2*self.render_figure_ratio *fr_multiplier ,
+                        (self.Y_RANGE)*2*self.render_figure_ratio ), dpi=self.render_dpi)
+        plt.close()
+        return fig
+    
+    #==============================================================
+        
     def render(self, local_sensors=True, reward_signal=True, show_plots=True):
 
         if local_sensors:
@@ -543,7 +681,12 @@ class World(gym.Env):
         ax.vlines(self.X_RANGE,  -self.Y_RANGE, self.Y_RANGE,  color='black', linewidth=0.5, linestyle='dashed'  )
         ax.hlines(-self.Y_RANGE,  -self.X_RANGE, self.X_RANGE,  color='black', linewidth=0.5, linestyle='dashed'  )
         ax.hlines(self.Y_RANGE,  -self.X_RANGE, self.X_RANGE,  color='black', linewidth=0.5, linestyle='dashed'  )
-        self.render_state_hook(ax)
+        if self.TARGET_RADIUS>0:
+            ax.add_patch( # target circle
+                Circle(   ( 0, 0 ), ( self.TARGET_RADIUS ),color='black', linewidth=0.5, fill=False, linestyle='dashed'))
+
+        self.render_state_hook(ax)# call the hook now
+
         for n in range(self.N_BOTS):
         #--------------------------------------------------------------------------------------------------------------
             botx, boty = self.x[n, 0], self.y[n, 0]
@@ -610,10 +753,10 @@ class World(gym.Env):
             if self.record_reward_hist:
                 if self.enable_imaging:
                     bx = sf_reward.subplots(6, 1, gridspec_kw={'height_ratios': [1, 1, 4, 1, 1, 1]})
-                    ax_xray, ax_dray, ax_rsig, ax_srew, ax_crew, ax_rsum = bx[0], bx[1], bx[2], bx[3], bx[4], bx[5]
+                    ax_xray, ax_dray, ax_rsig, ax_rsum, ax_srew, ax_crew = bx[0], bx[1], bx[2], bx[3], bx[4], bx[5]
                 else:
                     bx = sf_reward.subplots(4, 1, gridspec_kw={'height_ratios': [4, 1, 1, 1]})
-                    ax_rsig, ax_srew, ax_crew, ax_rsum = bx[0], bx[1], bx[2], bx[3]
+                    ax_rsig, ax_rsum, ax_srew, ax_crew  = bx[0], bx[1], bx[2], bx[3]
             else:
                 if self.enable_imaging:
                     bx = sf_reward.subplots(3, 1, gridspec_kw={'height_ratios': [1, 1, 4]})
@@ -622,28 +765,35 @@ class World(gym.Env):
                     bx = sf_reward.subplots(1, 1, gridspec_kw={'height_ratios': [1,]})
                     ax_rsig= bx
 
+
             # reward_signal
-            ax_rsig.set_ylim(0.0,1.1)
-            ax_rsig.bar(self.reward_posw8, self.reward_signal[self.reward_posw8], color='tab:green' )
-            ax_rsig.bar(self.reward_negw8, -self.reward_signal[self.reward_negw8], color='tab:red' )
             ax_rsig.set_xticks(self.reward_plot_x, self.reward_labels)
-            for i in range(self.reward_signal_n):
-                ax_rsig.annotate(  f'{self.reward_signal[i]:.3f}', xy=(i-0.15, 1.05)  )
-            for p in self.reward_posw8:
-                ax_rsig.vlines(p, 0, 1, color='green')
-            for p in self.reward_negw8:
-                ax_rsig.vlines(p, 0, 1, color='red')
-            ax_rsig.set_title('Reward Signal')
+            if self.render_normalized_reward:
+                ax_rsig.set_title('Reward Signal (Normalized)')
+                ax_rsig.set_ylim(0.0,1.1)
+                ax_rsig.bar(self.reward_plot_x, self.reward_signal/self.rw8, color='tab:green' )
+                for i in range(self.r_dim):
+                    ax_rsig.annotate(  f'{self.reward_signal[i]:.3f}', xy=(i-0.125, 1.05)  )
+                    #ax_rsig.vlines(i, 0, self.rw8[i], color='black', linestyle='dotted', linewidth=0.5)
+            else:
+                ax_rsig.set_title('Reward Signal')
+                ax_rsig.set_ylim(0.0,self.reward_plot_y+0.1)
+                ax_rsig.bar(self.reward_plot_x, self.reward_signal, color='tab:green' )
+                for i in range(self.r_dim):
+                    ax_rsig.annotate(  f'{self.reward_signal[i]:.3f}', xy=(i-0.125, self.reward_signal[i]+0.05)  )
+                    ax_rsig.vlines(i, 0, self.rw8[i], color='black', linestyle='dotted', linewidth=0.5)
+
+
 
             if self.record_reward_hist:
                 # reward plots
-                ax_srew.plot(self.reward_hist[1], color='tab:green')
+                ax_srew.plot(self.reward_hist[1], color='tab:blue')
                 ax_srew.set_title(f'Step-Reward : {self.reward_hist[1][-1]:.3f}')
 
                 ax_crew.plot(self.reward_hist[2], color='tab:brown')
                 ax_crew.set_title(f'Cummulative-Reward : {self.reward_hist[2][-1]:.3f}')
                 
-                ax_rsum.plot(self.reward_hist[0], color='tab:blue')
+                ax_rsum.plot(self.reward_hist[0], color='tab:green')
                 ax_rsum.set_title(f'Signal Sum : {self.reward_hist[0][-1]:.3f}')
 
             if self.enable_imaging:
@@ -664,7 +814,7 @@ class World(gym.Env):
         (plt.show() if show_plots else plt.close())
         return fig
 
-#==============================================================
+    #==============================================================
     def render_state_hook(self, ax):
         pass # <---- use 'ax' to render target points
 
@@ -672,24 +822,29 @@ class World(gym.Env):
             render_mode,  # str 'all', 'env', 'rew', 'sen'
             save_fig, # str - name of folder in ehich to save rendered plots or name of video if make_video is true (auto append .avi) 
             save_dpi, # 'figure' or a value for dpi - this is passed to fig.savefig() and overwrites render_dpi 
-            make_video # bool - if True, makes a video of all rendered frames
+            make_video, # bool - if True, makes a video of all rendered frames
+            video_fps,
             ):
-        return RenderHandler(self, render_mode=render_mode, save_fig=save_fig, save_dpi=save_dpi, make_video=make_video)
+        return RenderHandler(self, render_mode=render_mode, save_fig=save_fig, save_dpi=save_dpi, make_video=make_video, video_fps=video_fps)
+
+
 
 class RenderHandler:
 
     render_modes = { #<-- define only when rendering
-        'all':      lambda s :dict(local_sensors=True,  reward_signal=True, show_plots=s),
-        'env':      lambda s :dict(local_sensors=False, reward_signal=False, show_plots=s),
-        'rew':      lambda s :dict(local_sensors=False, reward_signal=True, show_plots=s),
-        'sen':      lambda s :dict(local_sensors=True,  reward_signal=False, show_plots=s),
+        'all':      lambda s :dict(local_sensors=True,  reward_signal=True, show_plots=s, ),
+        'env':      lambda s :dict(local_sensors=False, reward_signal=False, show_plots=s, ),
+        'rew':      lambda s :dict(local_sensors=False, reward_signal=True, show_plots=s, ),
+        'sen':      lambda s :dict(local_sensors=True,  reward_signal=False, show_plots=s, ),
         }
-    def __init__(self, env, render_mode, save_fig, save_dpi, make_video) -> None:
+    
+    def __init__(self, env, render_mode, save_fig, save_dpi, make_video, video_fps) -> None:
         self.env=env
         self.render_mode = render_mode
         self.save_fig=save_fig
         self.save_dpi = save_dpi
         self.make_video=make_video
+        self.video_fps=video_fps
 
         # make render functions
         self.Start = self.noop
@@ -728,15 +883,18 @@ class RenderHandler:
         self.buffer = BytesIO()
 
         print(f'[{__class__.__name__}]:: Reseting environment for first render...')
-        self.env.reset()
+        #self.env.reset()
 
         #self.buffer.seek(0) # seek zero before writing - not required on first write
-        self.env.render(**self.render_kwargs).savefig( self.buffer, dpi=self.save_dpi, transparent=False ) 
+        self.env.sample_render_fig(**self.render_kwargs).savefig( self.buffer, dpi=self.save_dpi, transparent=False ) 
         self.buffer.seek(0) # seek zero before reading
         frame = cv2.imdecode(np.asarray(bytearray(self.buffer.read()), dtype=np.uint8), cv2.IMREAD_COLOR)
         self.height, self.width, _ = frame.shape
         self.video_file_name = self.save_fig+'.avi'
-        self.video = cv2.VideoWriter(self.video_file_name , 0, 1, (self.width, self.height))
+
+        #                                   file,     fourcc, fps, size
+        self.video = cv2.VideoWriter(self.video_file_name , 0, self.video_fps, (self.width, self.height)) 
+
         # self.video.write(frame) #<--- do not write yet
         print(f'[{__class__.__name__}]:: Started Video @ [{self.video_file_name}] :: Size [{self.width} x {self.height}]')
 
@@ -753,13 +911,8 @@ class RenderHandler:
         del self.buffer
         print(f'[{__class__.__name__}]:: Stopped Video @ [{self.video_file_name}]')
 
-class RunMode(IntEnum):
-    no_hist=-1
-    training=0
-    testing=1
 
-"""
-ARCHIVE
+""" ARCHIVE
 
 
     def render_sensor_image(self, n, use_xray=False, show_ticks=True):

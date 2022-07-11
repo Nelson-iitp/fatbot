@@ -4,7 +4,6 @@ import os
 from math import inf
 import numpy as np
 import matplotlib.pyplot as plt
-from .core import RunMode
 
 """ Section: shared training/testing methods using stable_baselines3 """
 
@@ -32,12 +31,15 @@ def TEST(
         render_mode='', 
         save_fig='', 
         save_dpi='figure', 
-        make_video=False
+        make_video=False,
+        video_fps=1,
+        starting_state=None,
         ):
     # render_mode = [ 'all', 'env', 'rew', 'sen' ] # keep blank for no rendering
     # save_fig = path or keep blank for no saving
     # use model = ModelTypes[model_type].load(model_path), 
-    renderer = env.get_render_handler(render_mode=render_mode, save_fig=save_fig, save_dpi=save_dpi, make_video=make_video)
+    renderer = env.get_render_handler(
+        render_mode=render_mode, save_fig=save_fig, save_dpi=save_dpi, make_video=make_video, video_fps=video_fps)
         
     if model is None:
         print('[!] No model provided - Using random actions')
@@ -49,7 +51,7 @@ def TEST(
     test_history = []
     print(f'\n[++] Begin Epoch: Running for {episodes} episodes')
     for episode in range(episodes):
-        cs = env.reset() # reset
+        cs = env.reset(starting_state=starting_state) # reset
         done = False
         print(f'\n[+] Begin Episode: {episode+1} of {episodes}')
         
@@ -110,38 +112,36 @@ class RandomPolicy:
 
 class Agent:
 
-    def __init__(self, model_type, base_dir, envF) -> None:
-        self.envF = envF #<--- a callable
+    def __init__(self, model_type, model_name, base_dir, training_env, testing_env) -> None:
+        self.training_env = training_env
+        self.testing_env = testing_env
+        self.model_name = model_name
         self.model_type = model_type
         self.base_dir = base_dir
+        self.model_path= os.path.join(self.base_dir, self.model_name)
         os.makedirs(self.base_dir, exist_ok=True)
+        self.model=None
 
+    def check(self):
+        #check_env(self.testing_env)
+        return check_env(self.training_env)
+        
 
-    def train(self, model_name, learn_args, model_args):
-        print(f'[Agent]:: Training: [{model_name}]')
-        return TRAIN(
-            env=self.envF(RunMode.training),
-            model_type = self.model_type, 
-            model_path= os.path.join(self.base_dir, model_name), 
-            learn_args=learn_args, model_args=model_args)
+    def train(self, learn_args, model_args):
+        self.model = TRAIN(env=self.training_env,model_type = self.model_type, model_path= self.model_path, 
+                    learn_args=learn_args, model_args=model_args)
 
-    def test(self, model_name, enable_history=True, episodes=1, steps=0, deterministic=True, 
-                render_mode='', save_fig='',  save_dpi='figure', make_video=False  ):
-        # NOTE: render_mode overrides save_fig arg i.e. is render_mode is blank then save_fig doesnt matter
-        run_name = f'{model_name}_{save_fig}'
-        fig_save_path = (os.path.join(self.base_dir, run_name) if save_fig else save_fig)
-        print(f'[Agent]:: Testing: [{model_name}] @ {run_name}')
-        return TEST(
-            env=self.envF(RunMode.testing if enable_history else RunMode.no_hist),
-            model= (None if ((model_name is None) or (not model_name)) else \
-                    ModelTypes[self.model_type].load(os.path.join(self.base_dir, model_name))), 
-            episodes=episodes, 
-            steps=steps, 
-            deterministic=deterministic, 
-            render_mode=render_mode, 
-            save_fig=fig_save_path, save_dpi=save_dpi, make_video=make_video)
+    def test(self, episodes=1, steps=0, deterministic=True, render_mode='', 
+            save_fig='', save_dpi='figure', make_video=False, video_fps=1, starting_state=None):
+        if self.model is None:
+            self.load_model()
+        return TEST(env=self.testing_env,model=self.model,
+            episodes=episodes, steps=steps, deterministic=deterministic, render_mode=render_mode,
+            save_fig=(os.path.join(self.base_dir, save_fig) if save_fig else save_fig), 
+            save_dpi=save_dpi, make_video=make_video, video_fps=video_fps, starting_state=starting_state)
 
-
+    def load_model(self):
+        self.model = ModelTypes[self.model_type].load(self.model_path)
 
 
 # ----------------------------------------------------------------------------------------------------
