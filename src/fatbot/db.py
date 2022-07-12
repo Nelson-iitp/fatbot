@@ -87,15 +87,15 @@ def swarm_4x(permute, *isd_keys):
 
 
 # @=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=
-""" Worlds 
+""" Reward Schemes 
     
-    <1> use World.build_reward_scheme() to return a dictionary of reward signals, like:
+    <1> use scheme_*() to return a dictionary of reward signals, like:
 
-        [key in self.reward_data] : [weight (float 0 to 1)]
+        [key in World.reward_data] : [weight (float 0 to 1)]
 
     <2> All available reward signals are listed below (corresponding callers start with 'RF_')
 
-        def build_reward_scheme(self):
+        def scheme_name(self):
             return dict( 
                     random_reward_pos=  1.0, #<----- this is not useful (only for simulation)
                     random_reward_neg=  1.0, #<----- this is not useful (only for simulation)
@@ -108,52 +108,65 @@ def swarm_4x(permute, *isd_keys):
                     occlusion_ratio=    1.0)
 
     <3> NOTE: use def render_state_hook(self, ax) to get a hook from renderer
+
+    <4> Instead of inheriting from World class, we can use a reward_scheme_args instead
 """
 # @=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=
 
-class World_Default(World): # contains all usefull signals (no random signals)
-    def build_reward_scheme(self): 
-        return dict(
-            dis_target_point=   1.0, 
-            dis_target_radius=  1.0, 
-            all_unsafe=         1.0, 
-            all_neighbour=      1.0, 
-            occluded_neighbour= 1.0, 
-            occlusion_ratio=    1.0)
+
+def scheme_all():
+    return dict( 
+        random_reward_pos=  1.0, #<----- this is not useful (only for simulation)
+        random_reward_neg=  1.0, #<----- this is not useful (only for simulation)
+
+        dis_target_point=   1.0, 
+        dis_target_radius=  1.0, 
+        all_unsafe=         1.0, 
+        all_neighbour=      1.0, 
+        occluded_neighbour= 1.0, 
+        occlusion_ratio=    1.0)
+
+
+# contains all usefull signals (no random signals)
+def scheme_default(): 
+    return dict(
+        dis_target_point=   1.0, 
+        dis_target_radius=  1.0, 
+        all_unsafe=         1.0, 
+        all_neighbour=      1.0, 
+        occluded_neighbour= 1.0, 
+        occlusion_ratio=    1.0)
 
 # @=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=
 
-class World_R4x(World): # world with four reward signals
-    def build_reward_scheme(self): 
-        return dict( 
-            dis_target_point=   1.0, 
-            all_unsafe=         1.0, 
-            all_neighbour=      1.0, 
-            occluded_neighbour= 1.0)
-
-class World_R4o(World):
-    def build_reward_scheme(self): 
-        return dict( 
-            dis_target_radius=  1.0, 
-            all_unsafe=         1.0, 
-            all_neighbour=      1.0, 
-            occluded_neighbour= 1.0)
+def scheme_R4x(): 
+    return dict( 
+        dis_target_point=   1.0, 
+        all_unsafe=         1.0, 
+        all_neighbour=      1.0, 
+        occluded_neighbour= 1.0)
 
 
-class World_R5x(World):
-    def build_reward_scheme(self):      
-        return dict( 
-            dis_target_point=   1.0, 
-            all_unsafe=         1.0, 
-            all_neighbour=      1.0, 
-            occluded_neighbour= 1.0, 
-            occlusion_ratio=    1.0)
+def scheme_R4o(): 
+    return dict( 
+        dis_target_radius=  1.0, 
+        all_unsafe=         1.0, 
+        all_neighbour=      1.0, 
+        occluded_neighbour= 1.0)
 
-class World_R5o(World):
-    def build_reward_scheme(self):      
-        return dict( 
-            dis_target_radius=  1.0, 
-            all_unsafe=         1.0, 
-            all_neighbour=      1.0, 
-            occluded_neighbour= 1.0, 
-            occlusion_ratio=    1.0)
+
+def scheme_R5x():      
+    return dict( 
+        dis_target_point=   1.0, 
+        all_unsafe=         1.0, 
+        all_neighbour=      1.0, 
+        occluded_neighbour= 1.0, 
+        occlusion_ratio=    1.0)
+
+def scheme_R5o():      
+    return dict( 
+        dis_target_radius=  1.0, 
+        all_unsafe=         1.0, 
+        all_neighbour=      1.0, 
+        occluded_neighbour= 1.0, 
+        occlusion_ratio=    1.0)

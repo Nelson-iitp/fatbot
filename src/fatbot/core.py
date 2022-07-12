@@ -47,14 +47,18 @@ class World(gym.Env):
     STATE_DTYPE =    np.float32
     ACTION_DTYPE =   np.float32
     REWARD_DTYPE =   np.float32
-
+    
+    DEFAULT_REWARD_SCHEME = dict( 
+                    random_reward_pos=  1.0, #<----- this is not useful (only for simulation)
+                    random_reward_neg=  1.0, #<----- this is not useful (only for simulation)
+                        )
     def info(self):
         return \
             f'{self.name} :: Dim: ( X={self.X_RANGE*2}, Y={self.Y_RANGE*2}, H={self._max_episode_steps} )' + \
             f'\nDelta-Reward: [{self.delta_reward}],  Delta-Action: [{self.delta_action_mode}]' + \
-            f'\nImaging: [{self.enable_imaging}],  History: [{self.record_reward_hist}]'
+            f'\nImaging: [{self.enable_imaging}],  History: [{self.record_reward_hist}]\n'
     
-    def __init__(self, swarm, enable_imaging=True, horizon=0, seed=None, custom_XY=None, delta_reward=True,
+    def __init__(self, swarm, enable_imaging=True, horizon=0, seed=None, custom_XY=None, reward_scheme=None, delta_reward=True,
                     record_reward_hist=True, render_normalized_reward=True,
                     render_xray_cmap='hot', render_dray_cmap='copper',  render_dpi=None,
                     render_figure_ratio=1.0, render_bounding_width=0.05) -> None:
@@ -65,6 +69,8 @@ class World(gym.Env):
         self._max_episode_steps = (horizon if horizon>0 else inf)
         self.record_reward_hist = record_reward_hist
         self.render_normalized_reward = render_normalized_reward
+
+        self.reward_scheme = (self.DEFAULT_REWARD_SCHEME if (reward_scheme is None) else reward_scheme) # a dict of reward signal (RF_* : weight)
         self.delta_reward = delta_reward
         self.rng = np.random.default_rng(seed)
 
@@ -384,10 +390,10 @@ class World(gym.Env):
         self.ts=0
         self.done=self.is_done()
         if self.record_reward_hist:
-            self.reward_hist = [
-                [self.reward_signal_sum ], 
-                [self.step_reward], 
-                [self.cummulative_reward]
+            self.reward_hist = [ [],[],[]
+                #[self.reward_signal_sum ], 
+                #[self.step_reward], 
+                #[self.cummulative_reward]
                 ] # signal sum, current reward, cumm reward
         
         return self.base_observation
@@ -442,25 +448,13 @@ class World(gym.Env):
 
     """ Section: Reward Signal : implement in inherited classes """
 
-    def build_reward_scheme(self): 
-        # by default creates a -ve and a +ve reward signal and generates randomly
-        print('[!] Calling default build_reward_scheme function: Using Random Reward Signal')
-        return dict(
-            random_reward_pos = 1.0,
-            random_reward_neg = 1.0
-        )
-
-    def build_reward_signal(self):
-
-        reward_scheme = self.build_reward_scheme() 
-
+    def get_default_reward_data(self):
         max_dis_bots = ((self.X_RANGE**2+self.Y_RANGE**2)**0.5)*self.N_BOTS
         max_n_bots = (self.N_BOTS-1)*self.N_BOTS
-
-        self.reward_data = dict(
+        return dict(
                               #  sign,      low,      high              label
-            random_reward_pos =    ( 1       -1,        1,                'R+'),
-            random_reward_neg =    ( -1      -1,        1,                'R-'),
+            random_reward_pos =    ( 1,       -1,        1,                'R+'),
+            random_reward_neg =    ( -1,      -1,        1,                'R-'),
 
             # distance to target point <--- lower is better
             dis_target_point =    (    -1,         0,       max_dis_bots,     'C2P-Target',     ),
@@ -482,16 +476,22 @@ class World(gym.Env):
 
         )
 
+    def build_reward_signal(self):
+
+        self.reward_data = self.get_default_reward_data()
 
         reward_labels, rsign, rlow, rhigh, rw8, reward_caller   = [], [], [], [], [], []
-        for k,w in reward_scheme.items():
-            v = self.reward_data[k]
-            rsign.append( v[0] )
-            rlow.append( v[1] )
-            rhigh.append( v[2] )
-            reward_labels.append( v[3] )
-            rw8.append(w)
-            reward_caller.append( getattr(self, f'RS_{k}') )
+        for k,w in self.reward_scheme.items():
+            if k in self.reward_data:    
+                v = self.reward_data[k]
+                rsign.append( v[0] )
+                rlow.append( v[1] )
+                rhigh.append( v[2] )
+                reward_labels.append( v[3] )
+                rw8.append(w)
+                reward_caller.append( getattr(self, f'RS_{k}') )
+            else:
+                print(f'[!] Reward Signal [{k}] not found in reward data, skipping...')
 
         self.reward_labels =   reward_labels
         self.rsign = np.array( rsign, dtype=self.REWARD_DTYPE) # <--- +(higher is better) /-(loweris better) 
@@ -802,13 +802,13 @@ class World(gym.Env):
             if self.record_reward_hist:
                 # reward plots
                 ax_srew.plot(self.reward_hist[1], color='tab:blue')
-                ax_srew.set_title(f'Step-Reward : {self.reward_hist[1][-1]:.3f}')
+                ax_srew.set_title(f'Step-Reward : {self.step_reward:.3f}') #{self.reward_hist[1][-1]:.3f}')
 
                 ax_crew.plot(self.reward_hist[2], color='tab:brown')
-                ax_crew.set_title(f'Cummulative-Reward : {self.reward_hist[2][-1]:.3f}')
+                ax_crew.set_title(f'Cummulative-Reward : {self.cummulative_reward:.3f}') #{self.reward_hist[2][-1]:.3f}')
                 
                 ax_rsum.plot(self.reward_hist[0], color='tab:green')
-                ax_rsum.set_title(f'Signal Sum : {self.reward_hist[0][-1]:.3f}')
+                ax_rsum.set_title(f'Signal Sum : {self.reward_signal_sum:.3f}') #{self.reward_hist[0][-1]:.3f}')
 
             if self.enable_imaging:
                 ax_xray.set_yticks(range(self.N_BOTS), self.names)

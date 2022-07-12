@@ -7,27 +7,29 @@ import fatbot as fb
 
 
 def envF(testing):
-    from fatbot.db import World_Default as World #<-------------- fatbolt.World class
-    return World( # create and return an instance of World
+    return fb.World( # create and return an instance of World
         
         #<-------------- fatbot.Swarm instance (refer fatbot.db.GLOBAL_ISD)
-        swarm=fb.db.swarm_4x(False, '4x2', '4x1'),    
+        swarm=fb.db.swarm_4x(False, '4x2', '4x1'),    #(permute(bool), *keys from fb.GLOBAL_ISD)
 
         #<-------------- world dynamics 
         horizon=500,                    #<------ set 0 for infinite horizon
         enable_imaging=True,            #<------ enables sensor-ray imaging, disbale if not required
         seed=None,                      #<------ prng seed
         custom_XY=None,                 #<------ custom XY-range for world (by default copies from swarm, change if needed)
-        delta_reward = False,            #<------ if True, Uses delta (deifference) of rewards (reward improvement)
+
+        #<------ reward_scheme arguments(keys in World.reward_data v/s weight)
+        reward_scheme=fb.db.scheme_default(),             #<------ keep None for default (random rewawrd)
+        delta_reward = True,            #<------ if True, Uses delta (deifference) of rewards (reward improvement)
 
         #<-------------- render args 
-        record_reward_hist=testing,        #<------ if True, records reward history per episode (and renders it as well)
-        render_normalized_reward=False, #<------ if True, renders normalized bar plot for reward signal
-        render_xray_cmap='hot',         #<------ colormap arg for plt.imshow(xray) 
-        render_dray_cmap='copper',      #<------ colormap arg for plt.imshow(dray)
-        render_dpi=32,                  #<------ dpi arg for plt.figure()
-        render_figure_ratio=0.4,        #<------ figsize multiplier for plt.figure()
-        render_bounding_width=0.05,     #<------ how much margin to leave b/w world boundary and figure boundary (%)
+        record_reward_hist=testing,         #<------ if True, records reward history per episode (and renders it as well)
+        render_normalized_reward=False,     #<------ if True, renders normalized bar plot for reward signal
+        render_xray_cmap='hot',             #<------ colormap arg for plt.imshow(xray) 
+        render_dray_cmap='copper',          #<------ colormap arg for plt.imshow(dray)
+        render_dpi=32,                      #<------ dpi arg for plt.figure()
+        render_figure_ratio=0.4,            #<------ figsize multiplier for plt.figure()
+        render_bounding_width=0.05,         #<------ how much margin to leave b/w world boundary and figure boundary (%)
             )
 
 #%% [define agent]
@@ -35,7 +37,7 @@ def envF(testing):
 agent = fb.Agent(
         model_type='ppo', 
         model_name='MyName',
-        model_args=None, # keep None for default args
+        model_args=None,            #<--------- model_args for sb3, depends on model_type, keep None for default args
         base_dir='./MyBaseDir', 
         training_env=envF(False), 
         testing_env=envF(True)
@@ -44,7 +46,7 @@ agent = fb.Agent(
 
 #%% [training]
 
-agent.train(total_timesteps=15_00) #<---- trains on call
+agent.train(total_timesteps=150_000) #<---- trains on call
 
 #%% [testing]
 
