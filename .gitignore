@@ -2,6 +2,7 @@
 __pycache__/
 __archive__/
 __userdata__/
+base_fatbot/
 *.py[cod]
 *$py.class
 
