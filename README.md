@@ -4,7 +4,7 @@
 
 <hr>
 
-> Refer `run.py` for an example using `stable_baseline3.PPO` agent.
+> Refer `fatbot_v1/run.py` for an example using `stable_baseline3.PPO` agent.
 
 
 ### Sample World with 4 bots
