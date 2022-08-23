@@ -9,7 +9,8 @@ sbalgo = fb.PPO #<----- model args depend on this
 sbname = 'PPO'  #<----- model name (save file) depend on this
 
 ## parameters (algorithm specific)
-total_timestepsL=    [50_000, 150_000, 500_000]
+total_timestepsL=    [50_000]#, 150_000, 500_000]
+schemes =           [db.scheme_1, ]# db.scheme_2, db.scheme_3]
 n_steps=            2048+1024
 batch_size =        64+32
 n_epochs =          10
@@ -23,40 +24,41 @@ pkw=dict(
             pi=[400, 300, 300], 
             vf=[400, 300, 300])])
 
-
+delta_reward = True
+isd_keys = [db.isd_keys[0]]
+permute_states = False
 #%%         
 if __name__=='__main__':
     # for each delta rew, scheeme, isdkey
     for total_timesteps in total_timestepsL:
-        for delta_reward in (False, True):
-            for si,scheme in enumerate((db.scheme_1, db.scheme_2, db.scheme_3)):
-                for isd in db.isd_keys:
-                    id = f'{sbname}_{si}_{isd}_{total_timesteps}_{delta_reward}'
-                    print(f'Training: [{id}]')
-                    model = sbalgo(policy='MlpPolicy', 
-                            env=db.envF(False, scheme, delta_reward, isd), 
-                            learning_rate = learning_rate,
-                            n_steps= n_steps,
-                            batch_size = batch_size,
-                            n_epochs = n_epochs,
-                            gamma = 0.99,
-                            gae_lambda= 0.95,
-                            clip_range = 0.2,
-                            clip_range_vf = None,
-                            normalize_advantage= True,
-                            ent_coef= 0.005,
-                            vf_coef=0.5,
-                            max_grad_norm= 0.5,
-                            use_sde = False,
-                            sde_sample_freq = -1,
-                            target_kl = None,
-                            verbose=1,
-                            seed= None,
-                            device='cpu',
-                            policy_kwargs=pkw)
-                    
-                    model.learn(total_timesteps=total_timesteps,log_interval=5000)
-                    model.save(id)
+        for si,scheme in enumerate(schemes):
+            for isd in isd_keys:
+                id = f'{sbname}_{si}_{isd}_{total_timesteps}'
+                print(f'Training: [{id}]')
+                model = sbalgo(policy='MlpPolicy', 
+                        env=db.envF(False, scheme, delta_reward, permute_states, isd), 
+                        learning_rate = learning_rate,
+                        n_steps= n_steps,
+                        batch_size = batch_size,
+                        n_epochs = n_epochs,
+                        gamma = 0.99,
+                        gae_lambda= 0.95,
+                        clip_range = 0.2,
+                        clip_range_vf = None,
+                        normalize_advantage= True,
+                        ent_coef= 0.005,
+                        vf_coef=0.5,
+                        max_grad_norm= 0.5,
+                        use_sde = False,
+                        sde_sample_freq = -1,
+                        target_kl = None,
+                        verbose=1,
+                        seed= None,
+                        device='cpu',
+                        policy_kwargs=pkw)
+                
+                model.learn(total_timesteps=total_timesteps,log_interval=5000)
+                model.save(id)
         print(f'Finished!')
 
 
