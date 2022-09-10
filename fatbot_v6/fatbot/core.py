@@ -11,7 +11,27 @@ from .common import REMAP, get_angle, get_nspace
 
 class World(gym.Env):
 
-    default_bot_colors = [ 'red', 'blue', 'green', 'gold',   'cyan', 'magenta', 'purple', 'brown' ]
+    # $-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-
+    """ Section: Initialize """
+    # $-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-
+
+    default_bot_colors = [ 
+        'red', 
+        'blue', 
+        'green', 
+        'gold',   
+        'cyan', 
+        'magenta', 
+        'purple', 
+        'brown',
+        'tab:red', 
+        'tab:blue', 
+        'tab:green', 
+        'tab:grey',   
+        'tab:olive', 
+        'tab:orange', 
+        'tab:purple', 
+        'tab:brown' ]
     default_n_bots = len(default_bot_colors)
     default_bot_markers = ['o' for _ in range(default_n_bots)]
     default_reward_scheme = dict( 
@@ -107,7 +127,7 @@ class World(gym.Env):
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         # render related
         print(f'[*] World Created :: {self.info()}')
-        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+       
 
     # $-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-
     """ Section: Build """
@@ -127,8 +147,6 @@ class World(gym.Env):
                         'low': (-self.X_RANGE*2, -self.Y_RANGE*2), 
                         'high':( self.X_RANGE*2, self.Y_RANGE*2), 
                     }
-        #self.force_clip_low = np.array((-self.X_RANGE, -self.Y_RANGE), dtype= self.STATE_DTYPE)
-        #self.force_clip_high= np.array((self.X_RANGE, self.Y_RANGE), dtype= self.STATE_DTYPE)
         velocity_space_info = { # velocities dx, dy
                         'dim': 2,
                         'low': (-self.SPEED_LIMIT, -self.SPEED_LIMIT), 
@@ -139,34 +157,26 @@ class World(gym.Env):
                         'low': (0,             0,         ), 
                         'high':(self.N_BOTS-1, self.N_BOTS-2), 
                     }
-
         sensor_space_info = { # ( dis, arch, arcl, arcm ) * n_bots-1
                         'dim': (self.N_BOTS-1) * 4,  
                         'low': tuple(np.array([(0, 0, 0, 0) for _ in range(self.N_BOTS-1)]).flatten()), 
                         'high': tuple(np.array([(max(self.X_RANGE, self.Y_RANGE), 2*pi, 2*pi, 2*pi) for _ in range(self.N_BOTS-1)]).flatten()), 
                     }
-        if False:
+
+        if self.delta_action_mode:
+            self.o_dim = position_space_info['dim']  + velocity_space_info['dim']
             self.observation_space = get_nspace(n=self.N_BOTS, dtype=self.STATE_DTYPE,
-                        shape = (position_space_info['dim']   + velocity_space_info['dim']  + neighbour_space_info['dim'] + sensor_space_info['dim'], ),
-                        low=    (position_space_info['low']     + velocity_space_info['low']   + neighbour_space_info['low'] + sensor_space_info['low']  ),
-                        high=   (position_space_info['high']    + velocity_space_info['high']   + neighbour_space_info['high'] + sensor_space_info['high'] ))
+                        shape = (self.o_dim,),
+                        low=    (position_space_info['low']  + velocity_space_info['low']   ),
+                        high=   (position_space_info['high'] + velocity_space_info['high']  ))
             
-            self.o_dim = 6 + ((self.N_BOTS-1) * 4)
         else:
-            if not self.delta_action_mode:
-                self.observation_space = get_nspace(n=self.N_BOTS, dtype=self.STATE_DTYPE,
-                            shape = (position_space_info['dim']   + neighbour_space_info['dim'] , ),
-                            low=    (position_space_info['low']   + neighbour_space_info['low']   ),
-                            high=   (position_space_info['high']  + neighbour_space_info['high'] ))
-                
-                self.o_dim = 4 
-            else:
-                self.observation_space = get_nspace(n=self.N_BOTS, dtype=self.STATE_DTYPE,
-                            shape = (position_space_info['dim']   + velocity_space_info['dim']  + neighbour_space_info['dim'] , ),
-                            low=    (position_space_info['low']     + velocity_space_info['low']   + neighbour_space_info['low']   ),
-                            high=   (position_space_info['high']    + velocity_space_info['high']   + neighbour_space_info['high'] ))
-                
-                self.o_dim = 6 
+            self.o_dim = position_space_info['dim']
+            self.observation_space = get_nspace(n=self.N_BOTS, dtype=self.STATE_DTYPE,
+                        shape = (self.o_dim,),
+                        low=    (position_space_info['low']   ),
+                        high=   (position_space_info['high']  ))
+
 
         self.base_observation = np.zeros(self.observation_space.shape, self.observation_space.dtype)
         self.observation = self.base_observation.reshape((self.N_BOTS, self.o_dim))
@@ -184,13 +194,12 @@ class World(gym.Env):
             self.dxy =           self.observation [:, 2:4] # dx,dy
             self.dx =            self.observation [:, 2:3] # dx
             self.dy =            self.observation [:, 3:4] # dy
-            s=4
         else:
             self.dxy =           np.zeros((self.N_BOTS, 2), dtype=self.observation_space.dtype) #[:, 2:4] # dx,dy
             self.dx =            self.dxy [:, 0:1] # dx
             self.dy =            self.dxy [:, 1:2] # dy
-            s=2
-
+            
+        s=self.o_dim
         e=s+1
         self.alln =            self.observation[:, s:e]
         s=e
@@ -228,7 +237,7 @@ class World(gym.Env):
         #self.initial_actuator = np.zeros_like(self.actuator)
 
         # define action views
-        self.δxy = self.actuator     [:, 0:2] 
+        self.δxy = self.actuator    [:, 0:2] 
         self.δx = self.actuator     [:, 0:1] 
         self.δy = self.actuator     [:, 1:2] 
 
@@ -256,11 +265,6 @@ class World(gym.Env):
             self.img_oray = np.zeros((self.N_BOTS, self.SENSOR_IMAGE_SIZE ), dtype=np.int16)         
             self.img_xray = np.zeros((self.N_BOTS, self.SENSOR_IMAGE_SIZE ), dtype=np.int16) 
             self.img_dray =  np.zeros((self.N_BOTS, self.SENSOR_IMAGE_SIZE ), dtype=np.int16)
-        
-        #self.POS_LOW, self.POS_HIGH = \
-        #    np.array([-self.X_RANGE, -self.Y_RANGE], dtype=self.STATE_DTYPE)*0.5, \
-        #        np.array([self.X_RANGE, self.Y_RANGE], dtype=self.STATE_DTYPE)*0.5
-        
         return
 
 
@@ -369,6 +373,9 @@ class World(gym.Env):
                         self.img_dray[b, arcl+np.where(img[arcl:arch]>distance)[0]] = distance
                                                 # 0  1     2     3     4      5  6  7     8     9         10     11   12    13
                 
+            # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            # Occlusion Dection Algorithm
+            # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
             # ---> all neighbours end
             #distance_key = 9
             high_key, low_key = 10, 11
@@ -415,18 +422,7 @@ class World(gym.Env):
                             # al zl ah zh - occ-part-low
                             # zl al zh ah - occ-part-high
                             # zl al ah zh - occ-full
-                        
-
-
-
-                        
-                        
-                    #print(f'[2] {al=}, {ah=}, {zl=}, {zh=}')
-                    #if al>zl: #first determine lower
-                    #    zl, zh, al, ah = al, ah, zl, zh
-                    #print(f'[3] {al=}, {ah=}, {zl=}, {zh=}')
-                    #print( zl, zh, al, ah)
-                    #if not (al<zl and ah<zh and ah<zl):
+                    
                     if is_occluded:
                         self.sensor_data[b, ni, -1] = 1
                         self.occn[b,:]+=1
@@ -436,7 +432,7 @@ class World(gym.Env):
 
 
                     self.sense[b, ni, :] = self.sensor_data[b, ni, 9:13 ]
-
+            # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
                 
             
@@ -446,7 +442,10 @@ class World(gym.Env):
         return
 
     def is_done(self):
-        return bool( (self.ts>=self.horizon) or ( self.n_alive < self.MIN_BOTS_ALIVE)  )
+        return bool(self.n_alive < self.MIN_BOTS_ALIVE) 
+
+    def is_timeout(self):
+        return (self.ts>=self.horizon)
 
     def custom_reset(self, starting_state):
         self.initial_observation[:, 0:2] = np.load(starting_state)
@@ -460,9 +459,10 @@ class World(gym.Env):
         if starting_state is None:
             self.choose_i_state = self.rng.integers(0,  len(self.initial_states))
         else:
-            self.choose_i_state = int(starting_state(self.episode))
+            self.choose_i_state = int(starting_state(self.episode))    
         for i,p in  enumerate(self.initial_states[self.choose_i_state]):
             self.initial_observation[i, 0:2] = p[0:2] # p = (x,y) 2-tuple
+
         return self.restart()
 
     def restart(self):
@@ -484,14 +484,7 @@ class World(gym.Env):
         self.ts=0
         self.done=self.is_done()
         if self.record_reward_hist:
-            self.reward_hist = [ [],[],[]
-                #[self.reward_signal_sum ], 
-                #[self.step_reward], 
-                #[self.cummulative_reward]
-                ] # signal sum, current reward, cumm reward
-        #self.syncer = 0
-        #self.nsync = len(self.sync_list)
-        #self.bot_set=set(range(self.N_BOTS))
+            self.reward_hist = [ [],[],[] ] # signal sum, current reward, cumm reward
         self.botlist = np.arange(0, self.N_BOTS)
         return self.base_observation
 
@@ -500,16 +493,12 @@ class World(gym.Env):
     
     def step(self, action):
         self.base_actuator[:] = self.action_mapper.in2map(np.clip( action, self.action_space.low, self.action_space.high )) # copy actions
-        self.actuator[np.where(self.alive==False)[0],:]=0 # not act on crahsed robots
+        
+        # not act on crahsed robots
+        #self.actuator[np.where(self.alive==False)[0],:]=0 
 
         if self.nsync:
-            #this_turn = set(self.sync_list[self.syncer])
-            #sync_turns  =  list(self.bot_set.difference(this_turn))
-            ##print(f'{sync_turns=}')
-            #self.actuator[sync_turns,:]=0
-            #self.syncer = (self.syncer+1)%self.nsync
-            
-            # first select how many bots are going to move in that turn
+            # first select how many bots are (not) going to move in that turn
             how_many=self.rng.integers(0, self.N_BOTS-1)
             which_ones = self.rng.choice(self.botlist, size=how_many, replace=False)
             self.actuator[which_ones,:]=0
@@ -519,10 +508,7 @@ class World(gym.Env):
             self.dxy[:] = np.clip(self.dxy+self.δxy, -self.SPEED_LIMIT, self.SPEED_LIMIT)
         else:
             self.dxy[:] = self.δxy
-        # assume that veclocities are updates - x,y,, dx,dy
-        #if self.force_field:
-            #self.xy[:]=np.clip(self.dxy+self.xy, self.force_clip_low, self.force_clip_high  ) # move forward - restricted
-        #else:
+
         self.xy+=self.dxy # move forward - unrestricted
 
         # update state variables----------------------
@@ -532,6 +518,7 @@ class World(gym.Env):
 
         self.ts+=1
         self.done=self.is_done()
+        self.timeout = self.is_timeout()
 
         #**--**--**--**--**--**--**--**--**--**--**--**--**--**--**--**--**--**--**--**--**--**--
         if not self.done:
@@ -549,7 +536,11 @@ class World(gym.Env):
             self.reward_signal[:] = current_reward_signal
             self.reward_signal_sum = current_reward_signal_sum
         else:
-            self.step_reward=-10.0
+            if self.timeout:
+                self.step_reward=0.0
+            else: #(not timeout but done i.e crashed or out of bounds)
+                self.step_reward=-10.0
+
         #**--**--**--**--**--**--**--**--**--**--**--**--**--**--**--**--**--**--**--**--**--**--
 
         self.cummulative_reward += self.step_reward
@@ -587,6 +578,7 @@ class World(gym.Env):
             # no of occluded neighbours  <--- lower is better
             occluded_neighbour = (    -1,         0,       max_n_bots,       'V-Neighbours'  ),
 
+            # sum of total distance b/w neighbours <----- lower is better
             dis_neighbour= (    -1,         0,       max_dis_neighbour,       'C2-Neighbours'  ),
 
             # occlusion ratio = occluded pixels / total pixels  <--- lower is better
@@ -646,7 +638,6 @@ class World(gym.Env):
         return self.rw8 * self.reward_mapper.in2map(np.array( [ RF() for RF in self.reward_caller ], dtype=self.REWARD_DTYPE ))
 
     def get_multi_reward_signal(self):  # higher is better
-        
         return np.array([self.rw8 * self.reward_mapper.in2map(np.array( [ RF(b) for RF in self.reward_caller ], dtype=self.REWARD_DTYPE )) \
             for b in self.nr ], dtype=self.REWARD_DTYPE)
 
@@ -697,12 +688,6 @@ class World(gym.Env):
         else:
             return (self.N_BOTS - 1 - self.alln[b]) + (self.occn[b])
 
-    
-    #def RS_occlusion_ratio(self, b=None):
-    #    if b is None:
-    #        return np.sum ([  (len(np.where(self.img_xray[n]>1)[0])/self.SENSOR_IMAGE_SIZE)  for n in self.nr ])
-    #    else:
-    #        return (len(np.where(self.img_xray[b]>1)[0])/self.SENSOR_IMAGE_SIZE)
     # $-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-
     """ Section: Rendering """
     # $-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-
@@ -764,6 +749,7 @@ class World(gym.Env):
         # ============================================================================================================
         # draw sensor data on left
         # ============================================================================================================
+        
         if local_sensors:
             sf_sensor_data.suptitle(f'Sensor Data')
             ax = sf_sensor_data.subplots(self.N_BOTS, 1)
@@ -963,34 +949,3 @@ class World(gym.Env):
     #==============================================================
     def render_state_hook(self, ax):
         pass # <---- use 'ax' to render target points
-
-""" ARCHIVE
-
-
-    def render_sensor_image(self, n, use_xray=False, show_ticks=True):
-        if not self.enable_imaging:
-            return None, ""
-        fig,_ = plt.figure()
-        if show_ticks:
-            plt.xticks(self.arcTicks[:,0], self.arcTicks[:,1] )
-            
-            plt.grid(axis='both')
-
-        if use_xray:
-            plt.imshow(np.reshape( (self.img_xray[n, :]), (1, self.SENSOR_IMAGE_SIZE) ), aspect=self.img_aspect, 
-                            cmap= self.render_xray_cmap, vmin= 0, vmax= self.N_BOTS ) 
-            arcm = np.where(self.img_oray[n]>0)[0]
-            for arcpt in arcm:
-                plt.scatter( [arcpt], [0], color='white', marker='d') # self.img_oray[n,arcpt:arcpt+1]
-                # f'${self.img_oray[n,arcpt]}$'
-                plt.annotate(f'{self.img_oray[n,arcpt]}', xy=(arcpt,0.4))
-            plt.title("X-Ray: "+self.names[n])
-        else:
-            plt.imshow(np.reshape( (self.img_dray[n, :]), (1, self.SENSOR_IMAGE_SIZE) ), aspect=self.img_aspect, 
-                            cmap= self.render_dray_cmap, vmin= 0, vmax= self.SCAN_RADIUS )
-            plt.title("D-Ray: "+self.names[n])
-        
- 
-        return fig, "render_sensor_image_local"
-
-"""
