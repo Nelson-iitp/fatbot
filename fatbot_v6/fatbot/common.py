@@ -224,9 +224,9 @@ def TEST(
     
         
         if save_state_info and save_both_states:
-            env.save_state(f'{save_state_info}_{episode}_initial.npy')
+            env.save_state(os.path.join(save_state_info, f'{episode}_initial.npy'))
             fig=env.render() # do a default render
-            fig.savefig(f'{save_state_info}_{episode}_initial.png')
+            fig.savefig(os.path.join(save_state_info, f'{episode}_initial.png'))
             #plt.show()
             del fig
 
@@ -250,9 +250,9 @@ def TEST(
             print(f'  [{episode_timesteps}/{done}]: Reward: {rew}')
             renderer.Render() 
         if save_state_info:
-            env.save_state(f'{save_state_info}_{episode}_final.npy')
+            env.save_state(os.path.join(save_state_info, f'{episode}_final.npy'))
             fig=env.render() # do a default render
-            fig.savefig(f'{save_state_info}_{episode}_final.png')
+            fig.savefig(os.path.join(save_state_info, f'{episode}_final.png'))
             #plt.show()
             del fig
         #if cast_render:

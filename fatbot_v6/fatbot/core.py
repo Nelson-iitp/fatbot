@@ -50,7 +50,7 @@ class World(gym.Env):
     
     def info(self):
         return \
-            f'{self.name} :: Dim: ( X={self.X_RANGE*2}, Y={self.Y_RANGE*2}, H={self.horizon} )' + \
+            f'{self.name} :: {self.N_BOTS=}, Dim: ( X={self.X_RANGE*2}, Y={self.Y_RANGE*2}, H={self.horizon} )' + \
             f'\nDelta-Reward: [{self.delta_reward}],  Delta-Action: [{self.delta_action_mode}]' + \
             f'\nImaging: [{self.enable_imaging}],  History: [{self.record_reward_hist}]\n'
 
@@ -199,12 +199,10 @@ class World(gym.Env):
             self.dx =            self.dxy [:, 0:1] # dx
             self.dy =            self.dxy [:, 1:2] # dy
             
-        s=self.o_dim
-        e=s+1
-        self.alln =            self.observation[:, s:e]
-        s=e
-        e=s+1
-        self.occn =            self.observation[:, s:e]
+
+        self.ngn =             np.zeros((self.N_BOTS, 2), dtype=self.observation_space.dtype)
+        self.alln =            self.ngn[:, 0:1]
+        self.occn =            self.ngn[:, 1:2]
 
         #self.sense =            self.observation[:, 6:].reshape((self.N_BOTS, (self.N_BOTS-1) , 4))
         self.sense =            np.zeros((self.N_BOTS, (self.N_BOTS-1) , 4), dtype=self.STATE_DTYPE)
@@ -548,7 +546,7 @@ class World(gym.Env):
             self.reward_hist[0].append(self.reward_signal_sum)
             self.reward_hist[1].append(self.step_reward)
             self.reward_hist[2].append(self.cummulative_reward)
-        return  self.base_observation, self.step_reward, self.done, {}
+        return  self.base_observation, self.step_reward, self.done or self.timeout, {}
     
     # $-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-
     """ Section: Reward Signal : implement in inherited classes """
@@ -753,6 +751,7 @@ class World(gym.Env):
         if local_sensors:
             sf_sensor_data.suptitle(f'Sensor Data')
             ax = sf_sensor_data.subplots(self.N_BOTS, 1)
+            #print(f'{len(ax)=}')
             limL, limH = -self.SCAN_RADIUS*1.25, self.SCAN_RADIUS*1.25
             for n in self.nr:
                 ax[n].axis('equal')

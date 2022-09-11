@@ -11,6 +11,6 @@ from fatbot.common import RandomPolicy, REMAP, JSON, RenderHandler
 
 import fatbot.core as core
 from fatbot.core import World
-
+import fatbot.db as db
 
 # ARCHIVE NOTE: this is the single agent version
