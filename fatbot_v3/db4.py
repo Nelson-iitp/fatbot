@@ -43,7 +43,7 @@ def envF(testing, horizon, scheme, delta_reward, permute_states, *states):
         delta_reward=           delta_reward, 
         n_bots=                 4, 
         bot_radius=             1, 
-        scan_radius=            15, 
+        scan_radius=            40, 
         safe_distance=          2.5, 
         speed_limit=            1, 
         delta_speed=            0.0, 

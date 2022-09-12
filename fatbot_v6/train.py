@@ -13,20 +13,19 @@ import os
 # Training Parameters
 #------------------------------
 
-db = fb.db.db4         # world model class
+db = fb.db.db8         # world model class
 print(f'{db=}')
 #-----------------------------
 model_name =            'x'    #<----- stores data in this folder
-model_version =         'base'   #<----- ... saves policy with this name
-model_path =            os.path.join(model_name, model_version)
+model_path =            os.path.join(model_name, 'base')
 eval_path =             os.path.join(model_name, 'eval')
 os.makedirs(model_name, exist_ok=True)
 #-----------------------------
-total_timesteps =       5_000
-horizon =               50
-gamma =                 0.5 # discount factor
+total_timesteps =       1_00_000
+horizon =               1500
+gamma =                 0.90 # discount factor
 #-----------------------------
-initial_state_list =  list(db.isd.values()) 
+initial_state_list = [ list(db.isd.values())[0] ]
 permute_states =      False
 #-----------------------------
 scheme=dict( 
@@ -105,8 +104,8 @@ model = fb.PPO(policy=      'MlpPolicy',
         policy_kwargs=dict(
                         activation_fn=  nn.LeakyReLU, 
                         net_arch=[dict(
-                            pi=[512, 512, 512], 
-                            vf=[512, 512, 512])])) #256, 256, 256, 128, 128
+                            pi=[768, 512, 256], 
+                            vf=[768, 512, 256])])) #256, 256, 256, 128, 128
 
 #%%
 #------------------------------
@@ -138,9 +137,9 @@ res.close()
 #------------------------------
 # Testing Env Initialize 
 #------------------------------
-testing_initial_state_list =  list(db.isd.values()) 
+testing_initial_state_list = [ list(db.isd.values())[0] ]
 testing_permute_states =      False
-testing_horizon = int(horizon/1)
+testing_horizon = int(horizon/5)
 testing_env = db.envF(
   True, 
   testing_horizon,
@@ -149,7 +148,7 @@ testing_env = db.envF(
   testing_permute_states,
   *testing_initial_state_list )
 
-render_as = os.path.join(model_name, 'render')
+render_as = None #os.path.join(model_name, 'render')
 
 print(f'Testing @ [{model_path}]')
 average_return, total_steps = fb.TEST(

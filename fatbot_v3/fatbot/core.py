@@ -37,12 +37,44 @@ RewardSchemes = dict(
                 occluded_neighbour= 2.0, 
                 ),
 
-    Rn3  = dict( 
+    Ro43  = dict( 
+                dis_target_radius=  0.5, 
+                all_unsafe=         1.0, 
+                all_neighbour=      1.0, 
+                occluded_neighbour= 3.0, 
+                ),
+
+
+
+
+
+    Rn2  = dict( 
                 #dis_target_radius=  1.0, 
+                dis_neighbour =     0.5,
                 all_unsafe=         1.0, 
                 all_neighbour=      1.0, 
                 occluded_neighbour= 2.0, 
                 ),
+
+    Rn3  = dict( 
+                dis_target_radius=  1.0, 
+                all_unsafe=         1.0, 
+                all_neighbour=      1.0, 
+                occluded_neighbour= 2.0, 
+                ),
+
+    Rn4  = dict( 
+                dis_target_radius=  1.0, 
+                all_unsafe=         1.0, 
+                all_neighbour=      1.0, 
+                occluded_neighbour= 3.0, 
+                ),
+
+
+
+
+
+
 
     Rx4  = dict( 
                 dis_target_point=   1.0, 
@@ -572,6 +604,7 @@ class World(gym.Env):
         max_n_bots = (self.N_BOTS-1)*self.N_BOTS
         #max_o_bots = (2*self.N_BOTS-3)*self.N_BOTS
         max_n_unsafe = (self.SAFE_CENTER_DISTANCE**self._scd_power)*self.N_BOTS
+        max_dis_neighbour = (((self.X_RANGE*2)**2+(self.Y_RANGE*2)**2)**0.5)*self.N_BOTS*(self.N_BOTS-1)
         return dict(
                               #  sign,      low,      high              label
 
@@ -590,6 +623,8 @@ class World(gym.Env):
             # no of occluded neighbours  <--- lower is better
             occluded_neighbour = (    -1,         0,       max_n_bots,       'V-Neighbours'  ),
 
+                        # sum of total distance b/w neighbours <----- lower is better
+            dis_neighbour= (    -1,         0,       max_dis_neighbour,       'C2-Neighbours'  ),
             # occlusion ratio = occluded pixels / total pixels  <--- lower is better
             #occlusion_ratio =     (    -1,         0,       1,                'V-Ratio'       ),
 
@@ -656,6 +691,11 @@ class World(gym.Env):
     """ Pre-defined reward signals """
     # $-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-
     
+    def RS_dis_neighbour(self, b=None): 
+        if b is None:
+            return np.sum( self.sense[:, :, 0] )
+        else:
+            return np.sum( self.sense[b, :, 0] )# np.linalg.norm( self.xy[b, :], 2 ) 
 
     def RS_dis_target_point(self, b=None): 
         if b is None:

@@ -515,9 +515,9 @@ class World(gym.Env):
         #---------------------------------------------
 
         self.ts+=1
-        self.done=self.is_done()
+        self.term=self.is_done()
         self.timeout = self.is_timeout()
-
+        self.done = self.term or self.timeout
         #**--**--**--**--**--**--**--**--**--**--**--**--**--**--**--**--**--**--**--**--**--**--
         if not self.done:
             # reward is based on wighted signal
@@ -546,7 +546,7 @@ class World(gym.Env):
             self.reward_hist[0].append(self.reward_signal_sum)
             self.reward_hist[1].append(self.step_reward)
             self.reward_hist[2].append(self.cummulative_reward)
-        return  self.base_observation, self.step_reward, self.done or self.timeout, {}
+        return  self.base_observation, self.step_reward, self.done, {}
     
     # $-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-
     """ Section: Reward Signal : implement in inherited classes """

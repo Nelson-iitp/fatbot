@@ -68,8 +68,8 @@ class db8:
         return World(
             seed=                   None, 
             name=                   'world_db8', 
-            x_range=                35, 
-            y_range=                35, 
+            x_range=                50, 
+            y_range=                50, 
             enable_imaging=         False, 
             horizon=                horizon, 
             reward_scheme=          scheme, 
