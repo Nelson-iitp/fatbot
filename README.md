@@ -4,8 +4,6 @@
 
 <hr>
 
-> Refer `fatbot_v1/run.py` for an example using `stable_baseline3.PPO` agent.
-
 ### Fatbot Swarm Gathering
 
 https://github.com/Nelson-iitp/fatbot/blob/main/fig/fatbot.mp4
