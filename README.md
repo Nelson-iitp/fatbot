@@ -6,12 +6,19 @@
 
 > Refer `fatbot_v1/run.py` for an example using `stable_baseline3.PPO` agent.
 
+### Fatbot Swarm Gathering
+
+https://github.com/Nelson-iitp/fatbot/blob/main/fig/fatbot.mp4
+
+<video width="640" height="360" controls>
+  <source src="fig/fatbot.mp4" type="video/mp4">
+</video>
 
 ### Sample World with 4 bots
 
 https://github.com/Nelson-iitp/fatbot/blob/main/fig/vid_ppo_world_x4_1.mp4
 
-<video controls>
+<video width="480" height="270" controls>
   <source src="fig/vid_ppo_world_x4_1.mp4" type="video/mp4">
 </video>
 
@@ -19,7 +26,7 @@ https://github.com/Nelson-iitp/fatbot/blob/main/fig/vid_ppo_world_x4_1.mp4
 
 https://github.com/Nelson-iitp/fatbot/blob/main/fig/vid_ppo_world_x5_1.mp4
 
-<video controls>
+<video width="480" height="270" controls>
   <source src="fig/vid_ppo_world_x5_1.mp4" type="video/mp4">
 </video>
 
@@ -27,7 +34,7 @@ https://github.com/Nelson-iitp/fatbot/blob/main/fig/vid_ppo_world_x5_1.mp4
 
 https://github.com/Nelson-iitp/fatbot/blob/main/fig/vid_ppo_world_x6_1.mp4
 
-<video controls>
+<video width="480" height="270" controls>
   <source src="fig/vid_ppo_world_x6_1.mp4" type="video/mp4">
 </video>
 
@@ -82,11 +89,3 @@ https://github.com/Nelson-iitp/fatbot/blob/main/fig/vid_ppo_world_x6_1.mp4
 ![11](fig/11_visible.png)
 ![12](fig/12_all_visible.png)
 
-# Prebuilt Worlds
-
-![show4](fig/show4.png)
-![show6](fig/show6.png)
-![world](fig/world.png)
-![world2](fig/world2.png)
-![world3](fig/world3.png)
-![world4](fig/world4.png)
