@@ -4,8 +4,8 @@ from math import ceil, inf, pi, sqrt
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 import gym, gym.spaces
-import itertools
-
+#import itertools
+from scipy.spatial import ConvexHull, convex_hull_plot_2d
 from .common import REMAP, get_angle, get_nspace
 
 
@@ -109,7 +109,15 @@ RewardSchemes = dict(
                 occluded_neighbour= 1.0, 
                 ),
     
-
+    hull =     dict( 
+                dis_target_point=   1.0, 
+                #dis_neighbour = 1.0,
+                hull_formed=1.0,
+                dis_target_radius=  1.0, 
+                all_unsafe=         2.0, 
+                all_neighbour=      1.0, 
+                occluded_neighbour= 2.0, 
+                )
 
         )
 
@@ -183,6 +191,9 @@ class World(gym.Env):
         self.enable_reset_noise = (np.sum((np.abs(self.reset_noise))) > 0)
         self.enable_state_hist = (state_history>0)
         self.state_history=state_history
+
+        # something to keep track of convex hull
+
         
         
             
@@ -525,6 +536,8 @@ class World(gym.Env):
         
         return
 
+
+
     def is_done(self):
         return bool( (self.ts>=self.horizon) or ( self.n_alive < self.MIN_BOTS_ALIVE)  )
 
@@ -647,27 +660,31 @@ class World(gym.Env):
         maxd = (self.X_RANGE**2+self.Y_RANGE**2)**0.5
         max_g_bots = maxd*self.N_BOTS*(self.N_BOTS-1) * 0.5
         return dict(
-                              #  sign,      low,      high              label
+                                    #  sign,      low,      high              label
 
             # distance to target point <--- lower is better
             dis_target_point =    (    -1,         0,       max_dis_bots,     'C2P-Target',     ),
 
             # distance to target radius <--- lower is better
-            dis_target_radius =    (    -1,         0,       max_dis_bots,     'C2R-Target',     ),
+            dis_target_radius =   (    -1,         0,       max_dis_bots,     'C2R-Target',     ),
 
             # no of unsafe bots  <--- lower is better
-            all_unsafe =    (    -1,         0,       max_n_unsafe,       'Safe-Bots',    ),
+            all_unsafe =          (    -1,         0,       max_n_unsafe,       'Safe-Bots',    ),
 
             # no of total neighbours  <--- higher is better
-            all_neighbour = (     1,         0,       max_n_bots,       'Neighbours'    ),
+            all_neighbour =       (     1,         0,       max_n_bots,       'Neighbours'    ),
 
             # no of occluded neighbours  <--- lower is better
             occluded_neighbour = (    -1,         0,       max_n_bots,       'V-Neighbours'  ),
 
-            dis_neighbour = (    -1,         0,       max_g_bots,       'D-Neighbours'  ),
+            # distance b/w neighbours
+            dis_neighbour =      (    -1,         0,       max_g_bots,       'D-Neighbours'  ),
 
             # occlusion ratio = occluded pixels / total pixels  <--- lower is better
-            #occlusion_ratio =     (    -1,         0,       1,                'V-Ratio'       ),
+            # occlusion_ratio =     (    -1,         0,       1,                'V-Ratio'       ),
+
+            # convex hull formed or not <---- higher is better
+            hull_formed =       (    -1,        0,        1,                 'C-Hull'        ),
 
         )
 
@@ -774,6 +791,11 @@ class World(gym.Env):
             return np.sum(self.N_BOTS - 1 - self.alln) + np.sum(self.occn)
         else:
             return (self.N_BOTS - 1 - self.alln[b]) + (self.occn[b])
+
+    def RS_hull_formed(self, b=None):
+        self.hull = ConvexHull(self.xy)
+        self.hull_formed=(len(self.hull.vertices) == self.N_BOTS)
+        return int(self.hull_formed)
     #def RS_occlusion_ratio(self, b=None):
     #    if b is None:
     #        return np.sum ([  (len(np.where(self.img_xray[n]>1)[0])/self.SENSOR_IMAGE_SIZE)  for n in self.nr ])
