@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 import gym, gym.spaces
 #import itertools
-from scipy.spatial import ConvexHull, convex_hull_plot_2d
+from scipy.spatial import ConvexHull   #, convex_hull_plot_2d
 from .common import REMAP, get_angle, get_nspace
 
 
@@ -117,8 +117,17 @@ RewardSchemes = dict(
                 all_unsafe=         2.0, 
                 all_neighbour=      1.0, 
                 occluded_neighbour= 2.0, 
+                ),
+    
+    hullnt =     dict( 
+                dis_target_point=   1.0, 
+                #dis_neighbour = 1.0,
+                hull_formed=2.0,
+                dis_target_radius=  1.0, 
+                all_unsafe=         2.0, 
+                all_neighbour=      1.0, 
+                occluded_neighbour= 2.0, 
                 )
-
         )
 
 class World(gym.Env):
@@ -684,7 +693,7 @@ class World(gym.Env):
             # occlusion_ratio =     (    -1,         0,       1,                'V-Ratio'       ),
 
             # convex hull formed or not <---- higher is better
-            hull_formed =       (    -1,        0,        1,                 'C-Hull'        ),
+            hull_formed =       (    1,        0,        1,                 'C-Hull'        ),
 
         )
 
