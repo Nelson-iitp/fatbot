@@ -953,7 +953,7 @@ class World(gym.Env):
             #--------------------------------------------------------------------------------------------------------------
 
             #--------------------------------------------------------------------------------------------------------------
-            if self.enable_state_hist: 
+            if self.enable_state_hist and len(state_hist_marker)>0: 
                 for ostate in self.state_hist:
                     ax.scatter(ostate[n,0], ostate[n,1], marker=state_hist_marker, color=botcolor)
                     
