@@ -105,6 +105,13 @@ class RandomPolicy:
     def predict(self, observation, **kwargs): # state=None, episode_start=None, deterministic=True
         return self.action_space.sample(), None
 
+class ZeroPolicy:
+    def __init__(self, action_space) -> None:
+        self.action_space = action_space
+        self.zero = self.action_space.sample()*0.0
+    def predict(self, observation, **kwargs): # state=None, episode_start=None, deterministic=True
+        return self.zero, None
+    
 class REMAP:
     def __init__(self,Input_Range, Mapped_Range) -> None:
         self.input_range(Input_Range)

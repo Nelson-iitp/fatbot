@@ -5,7 +5,7 @@ from . import PPO
 import torch.nn as nn
 
 common_default={
-    'db':               db8,
+    'db':               db6,
     'global_isd':       'D',
     'horizon':          500,
     'gamma':            0.99,
@@ -14,7 +14,7 @@ common_default={
     'reward_scheme':    'RA',
     'delta_reward':     True,
     'scan_radius':      20.0,
-    'reset_noise':      2.0,
+    'reset_noise':      2.0, 
 }
 
 class RL:
@@ -26,11 +26,11 @@ class RL:
 
         if test: 
             scheme = 3 # 0=best, 1=final, 2=best_final, 3=best_final_checkpoints
-            episodes = 5
+            episodes = 1
             return model_name, model_version, model_algo, (scheme, episodes)
         
         # training timesteps
-        total_timesteps = 10_000
+        total_timesteps = 200_000
 
         # learning rate scheduling
         start_lr, end_lr =  0.0005, 0.0005
@@ -47,9 +47,9 @@ class RL:
                 policy=             'MlpPolicy', 
                 env=                env, 
                 learning_rate =     lr_schedule,
-                n_steps=            2048,
+                n_steps=            2048*2,
                 batch_size =        128,
-                n_epochs =          10,
+                n_epochs =          20,
                 gamma =             gamma,
                 gae_lambda=         0.95,   #<==============
                 clip_range=         cr_schedule,   #<==============
@@ -70,8 +70,8 @@ class RL:
                 policy_kwargs=dict(
                                 #activation_fn=  nn.LeakyReLU, 
                                 net_arch=[dict(
-                                    pi=[400, 300], 
-                                    vf=[400, 300])])) 
+                                    pi=[400, 300, 300], 
+                                    vf=[400, 300, 300])])) 
         
         return model_name, model_version, model, total_timesteps
 

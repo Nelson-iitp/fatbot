@@ -172,6 +172,7 @@ class World(gym.Env):
                     reset_noise=(0.0,0.0),
                     state_history=0,
                     random_target=False,
+                    state_target=True, # if True, state space has target information
                     #force_field=True, # if True, does not allow bots to cross boundary
                     record_reward_hist=True, render_normalized_reward=True,
                     render_xray_cmap='hot', render_dray_cmap='copper',  render_dpi=None,
@@ -183,6 +184,7 @@ class World(gym.Env):
         self.POINT_CLIP_HIGH = np.array([self.X_RANGE, self.Y_RANGE])
         self.BASE_TARGET_RADIUS = float(target_radius)
         self.BASE_TARGET_POINT= np.array(target_point)
+        self.state_target = state_target
         self.random_target=random_target
         self.N_BOTS = int(n_bots)
         self.nr = range(self.N_BOTS)
@@ -210,6 +212,8 @@ class World(gym.Env):
         self.initial_states=[]
         # something to keep track of convex hull
 
+        if self.random_target and not self.state_target:
+            print('\n[WARNING]:: random_target is True but state does not contain target point!')
         
         
             
@@ -274,35 +278,48 @@ class World(gym.Env):
                         'low': tuple(np.array([(0, 0, 0, 0) for _ in range(self.N_BOTS-1)]).flatten()), 
                         'high': tuple(np.array([(max(self.X_RANGE, self.Y_RANGE), 2*pi, 2*pi, 2*pi) for _ in range(self.N_BOTS-1)]).flatten()), 
                     }
-        if False:
-            self.observation_space = get_nspace(n=self.N_BOTS, dtype=self.STATE_DTYPE,
-                        shape = (position_space_info['dim']   + velocity_space_info['dim']  + neighbour_space_info['dim'] + sensor_space_info['dim'], ),
-                        low=    (position_space_info['low']     + velocity_space_info['low']   + neighbour_space_info['low'] + sensor_space_info['low']  ),
-                        high=   (position_space_info['high']    + velocity_space_info['high']   + neighbour_space_info['high'] + sensor_space_info['high'] ))
+        # if False:
+        #     self.observation_space = get_nspace(n=self.N_BOTS, dtype=self.STATE_DTYPE,
+        #                 shape = (position_space_info['dim']   + velocity_space_info['dim']  + neighbour_space_info['dim'] + sensor_space_info['dim'], ),
+        #                 low=    (position_space_info['low']     + velocity_space_info['low']   + neighbour_space_info['low'] + sensor_space_info['low']  ),
+        #                 high=   (position_space_info['high']    + velocity_space_info['high']   + neighbour_space_info['high'] + sensor_space_info['high'] ))
             
-            self.o_dim = 6 + ((self.N_BOTS-1) * 4)
-        else:
-            # self.observation_space = get_nspace(n=self.N_BOTS, dtype=self.STATE_DTYPE,
-            #             shape = (position_space_info['dim']   + velocity_space_info['dim']  + neighbour_space_info['dim'] , ),
-            #             low=    (position_space_info['low']     + velocity_space_info['low']   + neighbour_space_info['low']   ),
-            #             high=   (position_space_info['high']    + velocity_space_info['high']   + neighbour_space_info['high'] ))
-            
-            # self.o_dim = 6 
+        #     self.o_dim = 6 + ((self.N_BOTS-1) * 4)
+        # else:
+        if self.delta_action_mode:
+            shape = (position_space_info['dim']   + velocity_space_info['dim']  + neighbour_space_info['dim'] , )
+            low=    (position_space_info['low']     + velocity_space_info['low']   + neighbour_space_info['low']   )
+            high =   (position_space_info['high']    + velocity_space_info['high']   + neighbour_space_info['high'] )
+            odim = 6
+        else: # dont include velocities in observation space
+            shape = (position_space_info['dim']   +  neighbour_space_info['dim'] , )
+            low=    (position_space_info['low']   +  neighbour_space_info['low']   )
+            high =   (position_space_info['high']  + neighbour_space_info['high'] )
+            odim = 4
+
+        if self.state_target:
             self.e_dim = 3
             self.observation_space = get_espace(n=self.N_BOTS, dtype=self.STATE_DTYPE,
-                        shape = (position_space_info['dim']   + velocity_space_info['dim']  + neighbour_space_info['dim'] , ),
-                        edim = self.e_dim, # for x and y target point and ratget radius
-                        low=    (position_space_info['low']     + velocity_space_info['low']   + neighbour_space_info['low']   ),
-                        high=   (position_space_info['high']    + velocity_space_info['high']   + neighbour_space_info['high'] ),
-                        elow = (-self.X_RANGE, -self.Y_RANGE, 0),
-                        ehigh = (self.X_RANGE, self.Y_RANGE, max(self.X_RANGE, self.Y_RANGE))
-                        )
+                shape = shape,
+                edim = self.e_dim, # for x and y target point and ratget radius
+                low = low,
+                high = high,
+                elow = (-self.X_RANGE, -self.Y_RANGE, 0),
+                ehigh = (self.X_RANGE, self.Y_RANGE, max(self.X_RANGE, self.Y_RANGE))
+                )
+        else:
+            self.observation_space = get_nspace(n=self.N_BOTS, dtype=self.STATE_DTYPE,
+                shape = shape,low = low, high = high)
             
-            self.o_dim = 6 
-            
-
+        self.o_dim = odim 
         self.base_observation = np.zeros(self.observation_space.shape, self.observation_space.dtype)
-        self.observation = self.base_observation[0:-self.e_dim].reshape((self.N_BOTS, self.o_dim))
+
+        if self.state_target:
+            self.target_observation = self.base_observation[-self.e_dim:]
+            self.observation = self.base_observation[0:-self.e_dim].reshape((self.N_BOTS, self.o_dim))
+        else:
+            self.observation = self.base_observation.reshape((self.N_BOTS, self.o_dim))
+
         self.initial_observation = np.zeros_like(self.observation)
 
         # define observation views
@@ -310,12 +327,20 @@ class World(gym.Env):
         self.x =            self.observation [:, 0:1] # x
         self.y =            self.observation [:, 1:2] # y
 
-        self.dxy =           self.observation [:, 2:4] # dx,dy
-        self.dx =            self.observation [:, 2:3] # dx
-        self.dy =            self.observation [:, 3:4] # dy
+        if self.delta_action_mode:
+            self.dxy =           self.observation [:, 2:4] # dx,dy
+            self.dx =            self.observation [:, 2:3] # dx
+            self.dy =            self.observation [:, 3:4] # dy
 
-        self.alln =            self.observation[:, 4:5]
-        self.occn =            self.observation[:, 5:6]
+            self.alln =            self.observation[:, 4:5]
+            self.occn =            self.observation[:, 5:6]
+        else:
+            self.dxy =           np.zeros_like(self.xy) # dx, dy
+            self.dx =            self.dxy [:, 0:1] # dx
+            self.dy =            self.dxy [:, 1:2] # dy
+
+            self.alln =            self.observation[:, 2:3]
+            self.occn =            self.observation[:, 3:4]
 
         #self.sense =            self.observation[:, 6:].reshape((self.N_BOTS, (self.N_BOTS-1) , 4))
         self.sense =            np.zeros((self.N_BOTS, (self.N_BOTS-1) , 4), dtype=self.STATE_DTYPE)
@@ -601,9 +626,12 @@ class World(gym.Env):
             rand_point=0.0
 
         self.TARGET_RADIUS = max(0, self.BASE_TARGET_RADIUS + rand_radius)
-        self.TARGET_POINT= np.clip(self.BASE_TARGET_POINT + rand_point, self.POINT_CLIP_LOW, self.POINT_CLIP_HIGH)
+        self.TARGET_POINT = np.clip(self.BASE_TARGET_POINT + rand_point, self.POINT_CLIP_LOW, self.POINT_CLIP_HIGH)
         
         self.observation[:] = self.initial_observation # copy state vectors
+        if self.state_target:
+            self.target_observation[0:2] = self.TARGET_POINT
+            self.target_observation[2] = self.TARGET_RADIUS 
         self.alive[:]=True # all robots alive flag
         self.n_alive = np.sum(self.alive)
         if self.enable_state_hist: 
@@ -630,13 +658,12 @@ class World(gym.Env):
         
         return self.base_observation
     
-    def step_random(self):
-        self.step(self.action_space.sample())
-    
-    def step(self, action):
+
+    def read_actuators(self, action):
         self.base_actuator[:] = self.action_mapper.in2map(np.clip( action, self.action_space.low, self.action_space.high )) # copy actions
         self.actuator[np.where(self.alive==False)[0],:]=0 # not act on crahsed robots
 
+    def take_action(self):
         # set actuator values
         if self.delta_action_mode:
             self.dxy[:] = np.clip(self.dxy+self.δxy, -self.SPEED_LIMIT, self.SPEED_LIMIT)
@@ -688,6 +715,13 @@ class World(gym.Env):
             self.reward_hist[1].append(self.step_reward)
             self.reward_hist[2].append(self.cummulative_reward)
         return self.base_observation, self.step_reward, self.done, {}
+
+    def step(self, action):
+        self.read_actuators(action)
+        return self.take_action()
+
+    def step_random(self):
+        self.step(self.action_space.sample())
     
     # $-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-$-
     """ Section: Reward Signal : implement in inherited classes """
@@ -1117,6 +1151,27 @@ class World(gym.Env):
     #==============================================================
     def render_state_hook(self, ax):
         pass # <---- use 'ax' to render target points
+
+
+class World2(World):
+    r"""
+    robots are constantly pulled toward the target point
+    """
+    unit_pull = 0.5 # should be less than speed limit
+    def build_vectors(self):
+        super().build_vectors()
+        #self.unit_vector_target = np.zeros_like(self.xy)
+
+    def step(self, action):
+        self.read_actuators(action)
+        #--------------------
+        # calculate unit vector along the target point
+        dt = self.TARGET_POINT - self.xy
+        nt = np.linalg.norm(dt, 2, axis=-1, keepdims=True)
+        ut = (dt/nt)*self.unit_pull
+        self.δxy += ut
+        #--------------------
+        return self.take_action()
 
 """ ARCHIVE
 

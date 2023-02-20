@@ -1,4 +1,5 @@
-import fatbot as fb
+from .core import RewardSchemes
+from .core import World2 as World
 from math import pi
 
 global_render_dpi = 48
@@ -20,14 +21,14 @@ class db6:
 
 
     def envF(testing, target, target_rand, scan_radius,  reset_noise, horizon, scheme, delta_reward, point_lists, state_history):
-        return fb.World(
+        return World(
             seed=                   None, 
             name=                   'world_db6', 
             x_range=                30, 
             y_range=                30, 
             enable_imaging=         False, 
             horizon=                horizon, 
-            reward_scheme=          fb.RewardSchemes[scheme], 
+            reward_scheme=          RewardSchemes[scheme], 
             delta_reward=           delta_reward, 
             n_bots=                 6, 
             bot_radius=             1, 
@@ -72,14 +73,14 @@ class db8:
 
 
     def envF(testing, target, target_rand, scan_radius,  reset_noise, horizon, scheme, delta_reward, point_lists, state_history):
-        return fb.World(
+        return World(
             seed=                   None, 
             name=                   'world_db8', 
             x_range=                35, 
             y_range=                35, 
             enable_imaging=         False, 
             horizon=                horizon, 
-            reward_scheme=          fb.RewardSchemes[scheme], 
+            reward_scheme=          RewardSchemes[scheme], 
             delta_reward=           delta_reward, 
             n_bots=                 8, 
             bot_radius=             1, 
@@ -118,14 +119,14 @@ class db10:
 
 
     def envF(testing, target, target_rand, scan_radius,  reset_noise, horizon, scheme, delta_reward, point_lists, state_history):
-        return fb.World(
+        return World(
             seed=                   None, 
             name=                   'world_db10', 
             x_range=                35, 
             y_range=                35, 
             enable_imaging=         False, 
             horizon=                horizon, 
-            reward_scheme=          fb.RewardSchemes[scheme], 
+            reward_scheme=          RewardSchemes[scheme], 
             delta_reward=           delta_reward, 
             n_bots=                 10, 
             bot_radius=             1, 
