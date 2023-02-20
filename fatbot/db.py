@@ -4,6 +4,8 @@ from math import pi
 global_render_dpi = 48
 global_render_figure_ratio = 0.5
 global_render_bounding_width = 0.5
+
+__all__ = ['db6', 'db8', 'db10']
 class db6:
     isd = dict(
 
@@ -17,7 +19,7 @@ class db6:
     isd_keys = list(isd.keys())
 
 
-    def envF(testing, scan_radius,  reset_noise, horizon, scheme, delta_reward, point_list, state_history):
+    def envF(testing, target, target_rand, scan_radius,  reset_noise, horizon, scheme, delta_reward, point_lists, state_history):
         return fb.World(
             seed=                   None, 
             name=                   'world_db6', 
@@ -34,8 +36,9 @@ class db6:
             speed_limit=            1, 
             delta_speed=            0.0, 
             sensor_resolution=      40/pi, 
-            target_point=           (0.0, 0.0), 
-            target_radius=          10.0, 
+            target_point=           (target[0], target[1]), 
+            target_radius=          target[2], 
+            random_target =         target_rand,
             record_reward_hist=     testing, 
             reset_noise =           reset_noise,
             state_history = state_history,
@@ -45,7 +48,7 @@ class db6:
             render_dpi=global_render_dpi, 
             render_figure_ratio=global_render_figure_ratio, 
             render_bounding_width=global_render_bounding_width)\
-                    .add_initial_states(point_list)
+                    .add_initial_states(*point_lists)
 
 
 class db8:
@@ -68,7 +71,7 @@ class db8:
     isd_keys = list(isd.keys())
 
 
-    def envF(testing, scan_radius,  reset_noise, horizon, scheme, delta_reward, point_list, state_history):
+    def envF(testing, target, target_rand, scan_radius,  reset_noise, horizon, scheme, delta_reward, point_lists, state_history):
         return fb.World(
             seed=                   None, 
             name=                   'world_db8', 
@@ -85,8 +88,9 @@ class db8:
             speed_limit=            1, 
             delta_speed=            0.0, 
             sensor_resolution=      40/pi, 
-            target_point=           (0.0, 0.0), 
-            target_radius=          12.0, 
+            target_point=           (target[0], target[1]), 
+            target_radius=          target[2], 
+            random_target =         target_rand,
             record_reward_hist=     testing, 
             reset_noise =           reset_noise,
             state_history = state_history,
@@ -95,7 +99,7 @@ class db8:
             render_dpi=global_render_dpi, 
             render_figure_ratio=global_render_figure_ratio, 
             render_bounding_width=global_render_bounding_width)\
-                    .add_initial_states(point_list)
+                    .add_initial_states(*point_lists)
 
 
 class db10:
@@ -113,7 +117,7 @@ class db10:
     isd_keys = list(isd.keys())
 
 
-    def envF(testing, scan_radius,  reset_noise, horizon, scheme, delta_reward, point_list, state_history):
+    def envF(testing, target, target_rand, scan_radius,  reset_noise, horizon, scheme, delta_reward, point_lists, state_history):
         return fb.World(
             seed=                   None, 
             name=                   'world_db10', 
@@ -130,8 +134,9 @@ class db10:
             speed_limit=            1, 
             delta_speed=            0.0, 
             sensor_resolution=      40/pi, 
-            target_point=           (0.0, 0.0), 
-            target_radius=          15.0, 
+            target_point=           (target[0], target[1]), 
+            target_radius=          target[2], 
+            random_target =         target_rand,
             record_reward_hist=     testing, 
             reset_noise =           reset_noise,
             state_history = state_history,
@@ -140,6 +145,6 @@ class db10:
             render_dpi=global_render_dpi, 
             render_figure_ratio=global_render_figure_ratio, 
             render_bounding_width=global_render_bounding_width)\
-                    .add_initial_states(point_list)
+                    .add_initial_states(*point_lists)
 
 

@@ -6,7 +6,7 @@ from matplotlib.patches import Circle
 import gym, gym.spaces
 #import itertools
 from scipy.spatial import ConvexHull   #, convex_hull_plot_2d
-from .common import REMAP, get_angle, get_nspace
+from .common import REMAP, get_angle, get_nspace, get_espace
 
 
 # @=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=@=
@@ -148,10 +148,13 @@ class World(gym.Env):
             f'\nDelta-Reward: [{self.delta_reward}],  Delta-Action: [{self.delta_action_mode}]' + \
             f'\nImaging: [{self.enable_imaging}],  History: [{self.record_reward_hist}]\n'
 
-    def add_initial_states(self, point_list):
+    def add_initial_states(self, *point_lists):
         #NOTE:  state_list is a list of states where each state is a list on 'n-bots' no of points (2-tuples)
-        assert(len(point_list) == self.N_BOTS) #<---- must be true
-        self.initial_state = point_list
+        for point_list in point_lists:
+            if (len(point_list) == self.N_BOTS): #<---- must be true
+                self.initial_states.append(point_list)
+            else:
+                print(f'[!] Initial State [{point_list}] was skipped! Not enough points!')
         return self 
 
     def __init__(self, name='default', x_range=10, y_range=10, 
@@ -165,9 +168,10 @@ class World(gym.Env):
                     sensor_resolution=12,  # choose based on scan distance, use form: n/pi , pixel per m
                     min_bots_alive=0,     # min no. bots alive, below which world will terminate # keep zero for all alive condition
                     target_point=(0.0,0.0), 
-                    target_radius=0.0,  # optinal
+                    target_radius=0.0,  # optional
                     reset_noise=(0.0,0.0),
                     state_history=0,
+                    random_target=False,
                     #force_field=True, # if True, does not allow bots to cross boundary
                     record_reward_hist=True, render_normalized_reward=True,
                     render_xray_cmap='hot', render_dray_cmap='copper',  render_dpi=None,
@@ -175,8 +179,11 @@ class World(gym.Env):
         super().__init__()
         self.name = name
         self.X_RANGE, self.Y_RANGE = float(x_range), float(y_range)
-        self.TARGET_RADIUS = float(target_radius)
-        self.TARGET_POINT= np.array(target_point)
+        self.POINT_CLIP_LOW = np.array([-self.X_RANGE, -self.Y_RANGE])
+        self.POINT_CLIP_HIGH = np.array([self.X_RANGE, self.Y_RANGE])
+        self.BASE_TARGET_RADIUS = float(target_radius)
+        self.BASE_TARGET_POINT= np.array(target_point)
+        self.random_target=random_target
         self.N_BOTS = int(n_bots)
         self.nr = range(self.N_BOTS)
         self.BOT_RADIUS = float(bot_radius)
@@ -200,7 +207,7 @@ class World(gym.Env):
         self.enable_reset_noise = (np.sum((np.abs(self.reset_noise))) > 0)
         self.enable_state_hist = (state_history>0)
         self.state_history=state_history
-
+        self.initial_states=[]
         # something to keep track of convex hull
 
         
@@ -275,15 +282,27 @@ class World(gym.Env):
             
             self.o_dim = 6 + ((self.N_BOTS-1) * 4)
         else:
-            self.observation_space = get_nspace(n=self.N_BOTS, dtype=self.STATE_DTYPE,
+            # self.observation_space = get_nspace(n=self.N_BOTS, dtype=self.STATE_DTYPE,
+            #             shape = (position_space_info['dim']   + velocity_space_info['dim']  + neighbour_space_info['dim'] , ),
+            #             low=    (position_space_info['low']     + velocity_space_info['low']   + neighbour_space_info['low']   ),
+            #             high=   (position_space_info['high']    + velocity_space_info['high']   + neighbour_space_info['high'] ))
+            
+            # self.o_dim = 6 
+            self.e_dim = 3
+            self.observation_space = get_espace(n=self.N_BOTS, dtype=self.STATE_DTYPE,
                         shape = (position_space_info['dim']   + velocity_space_info['dim']  + neighbour_space_info['dim'] , ),
+                        edim = self.e_dim, # for x and y target point and ratget radius
                         low=    (position_space_info['low']     + velocity_space_info['low']   + neighbour_space_info['low']   ),
-                        high=   (position_space_info['high']    + velocity_space_info['high']   + neighbour_space_info['high'] ))
+                        high=   (position_space_info['high']    + velocity_space_info['high']   + neighbour_space_info['high'] ),
+                        elow = (-self.X_RANGE, -self.Y_RANGE, 0),
+                        ehigh = (self.X_RANGE, self.Y_RANGE, max(self.X_RANGE, self.Y_RANGE))
+                        )
             
             self.o_dim = 6 
+            
 
         self.base_observation = np.zeros(self.observation_space.shape, self.observation_space.dtype)
-        self.observation = self.base_observation.reshape((self.N_BOTS, self.o_dim))
+        self.observation = self.base_observation[0:-self.e_dim].reshape((self.N_BOTS, self.o_dim))
         self.initial_observation = np.zeros_like(self.observation)
 
         # define observation views
@@ -558,8 +577,10 @@ class World(gym.Env):
         self.state_hist.clear()
         self.state_hist_count=0
         self.episode += 1
-        # reset - choose randomly from known initial state distribution - state numbers start at 1
+        
         if starting_state is None:
+            # reset - choose randomly from known initial state distribution 
+            self.initial_state = self.initial_states[self.rng.integers(0, len(self.initial_states))]
             for i,p in  enumerate(self.initial_state):
                 self.initial_observation[i, 0:2] = np.array(p[0:2]) + \
                     ( self.rng.uniform(-self.reset_noise, self.reset_noise) if self.enable_reset_noise else 0.0)
@@ -569,7 +590,18 @@ class World(gym.Env):
                 self.initial_observation[i, 0:2] = np.array(p[0:2]) #+ \
                   #  ( self.rng.uniform(-self.reset_noise, self.reset_noise, size=2) if self.reset_noise>0.0 else 0.0)
 
+        if self.random_target:
+            rand_radius = self.rng.uniform(-1, 1)
+            rand_point = np.array( [
+                        self.rng.uniform(-self.X_RANGE, self.X_RANGE),
+                        self.rng.uniform(-self.Y_RANGE, self.Y_RANGE),
+                        ] )
+        else:
+            rand_radius=0.0
+            rand_point=0.0
 
+        self.TARGET_RADIUS = max(0, self.BASE_TARGET_RADIUS + rand_radius)
+        self.TARGET_POINT= np.clip(self.BASE_TARGET_POINT + rand_point, self.POINT_CLIP_LOW, self.POINT_CLIP_HIGH)
         
         self.observation[:] = self.initial_observation # copy state vectors
         self.alive[:]=True # all robots alive flag

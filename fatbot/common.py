@@ -10,7 +10,20 @@ import datetime
 now = datetime.datetime.now
 fake = lambda members: type('object', (object,), members)()
 
+class FAKE:
+    def __init__(self, **members) -> None: 
+        for k,v in members.items(): setattr(self, k, v)
+
 def get_nspace(n, dtype, shape, flatten=True, low=None, high=None):
+    r""" Returns a combined space of n similar spaces
+        
+    ..note:: This is used to create a common shared observation/action space for multiple similar bots
+
+    :param n:       no of spaces to combine
+    :param dtype:   dtype of space
+    :param shape:   shape of single space
+    :param flatten: if True, flattens the shape into 1-D array otherwise stacks using `np.vstack`
+    """
     base_low =  np.zeros(shape=shape, dtype=dtype)  + (0 if (low is None) else (np.array(low)))
     base_high =  np.zeros(shape=shape, dtype=dtype)  + (0 if (high is None) else (np.array(high)))
     low = np.vstack(tuple([ base_low for _ in range(n) ]))
@@ -18,30 +31,52 @@ def get_nspace(n, dtype, shape, flatten=True, low=None, high=None):
     if flatten:
         low = low.flatten()
         high = high.flatten()
-    return gym.spaces.Box(
-        low= low,
-        high= high, 
-        shape =low.shape, dtype = dtype) # ((n,) + shape)
+    return gym.spaces.Box(low= low,high= high, shape =low.shape, dtype = dtype)
+
+def get_espace(n, dtype, shape, edim, low=None, high=None, elow=None, ehigh=None):
+    r""" Returns a combined space of n similar spaces and additional dims
+        
+    ..note:: This is used to create a common shared observation/action space for multiple similar bots
+
+    :param n:       no of spaces to combine
+    :param dtype:   dtype of space
+    :param shape:   shape of single space
+    :param flatten: if True, flattens the shape into 1-D array otherwise stacks using `np.vstack`
+    """
+    base_low =  np.zeros(shape=shape, dtype=dtype)  + (0 if (low is None) else (np.array(low)))
+    base_high =  np.zeros(shape=shape, dtype=dtype)  + (0 if (high is None) else (np.array(high)))
+    low = np.vstack(tuple([ base_low for _ in range(n) ])).flatten()
+    high = np.vstack(tuple([ base_high for _ in range(n) ])).flatten()
+    ext_low =  np.zeros(shape=(edim,), dtype=dtype)  + (0 if (elow is None) else (np.array(elow)))
+    ext_high =  np.zeros(shape=(edim,), dtype=dtype)  + (0 if (ehigh is None) else (np.array(ehigh)))
+    low = np.hstack((low, ext_low))
+    high = np.hstack((high, ext_high))
+    return gym.spaces.Box(low= low,high= high, shape =low.shape, dtype = dtype)
 
 def get_angle(P):
-    # determin quadrant
+    r""" Helper function - used to determine angle (in rads) 
+        made by a position vector P with the +ve x-axis """
+    # determin quadrant (q)
     d = np.linalg.norm(P, 2) # np.sqrt(x**2 + y**2)
-    #q = 0
-    if P[0]>=0:
-        if P[1]>=0: #q=1
-            t = np.arccos(P[0]/d) # np.arcsin(y/d)
-        else: #q=4
+    if P[0]>=0: 
+        if P[1]>=0: # 1st quadrant
+            t = np.arccos(P[0]/d) # or np.arcsin(y/d)
+        else: # 4th quadrant
             t = 2*np.pi - np.arccos(P[0]/d)
     else:
-        if P[1]>=0: #q=2
+        if P[1]>=0: # 2nd quadrant
             t = np.pi - np.arcsin(P[1]/d)
-        else: #q=3
+        else: # third quadrant
             t =  np.pi + (np.arcsin(-P[1]/d))
     return t
 
 def image2video(image_folder, video_name='', fps=1):
-    # assume all plots have been saved like: *n.png (*=any, n=0,1,2...)
-    # NOTE: after converting to video, we can reduce its size by converting using VLC - File>Convert/Save>  set resoultion=0.5
+    r""" Converts a set of images to a video and saves it at desired path, 
+        assume all plots have been saved like: *n.png (*=any, n=0,1,2...)
+    
+    :param video_name:  name of the video file, if left blank, uses the image_folder name
+    ..note:: after converting to video, we can reduce its size by converting using VLC - File>Convert/Save>  set resoultion=0.5
+    """
     import cv2, os
     file_list = []
     for f in os.listdir(image_folder):
@@ -100,9 +135,6 @@ class JSON:
             data_dict = __class__.json.loads(f.read())
         return data_dict
 
-
-
-
 class RenderHandler:
 
     def __init__(self, env, render_as='', save_dpi='figure', make_video=False, video_fps=1, render_kwargs={}, start_n=0) -> None:
@@ -143,7 +175,6 @@ class RenderHandler:
         os.makedirs(self.render_as, exist_ok=True)
         self.n=self.start_n
 
-    
     def Render_Image(self):
         fig = self.env.render(**self.render_kwargs)
         fig.savefig(os.path.join(self.render_as, f'{self.n}.png'), dpi=self.save_dpi, transparent=False )     
@@ -207,6 +238,8 @@ def TEST(
         os.makedirs(save_states, exist_ok=True)
     sehist=[]
     tehist=[]
+    fighisti=[]
+    fighistf=[]
     renderer = RenderHandler(env, render_as=render_as, save_dpi=save_dpi, make_video=make_video,
                                             video_fps=video_fps, render_kwargs=render_kwargs, start_n=start_n )
     episode_max_steps = (steps if steps>0 else inf)
@@ -223,9 +256,7 @@ def TEST(
     for episode in range(episodes):
         cs = env.reset(starting_state=starting_state) # reset
         done = False
-        if plot_end_states:
-            _=env.render(*render_kwargs)
-            plt.show()
+        if plot_end_states: fighisti.append(env.render(*render_kwargs))
         if save_states:
             env.save_state(os.path.join(save_states, f'{episode}_{save_prefix}_initial.npy'))
         print(f'\n[+] Begin Episode: {episode+1} of {episodes}')
@@ -252,9 +283,8 @@ def TEST(
             if reverb: print(f'  [{episode_timesteps}/{done}]: Reward: {rew}')
             renderer.Render() 
 
-        if plot_end_states:
-            _=env.render(*render_kwargs)
-            plt.show()
+        if plot_end_states:fighistf.append(env.render(*render_kwargs))
+            #plt.show()
         if save_states:
             env.save_state(os.path.join(save_states, f'{episode}_{save_prefix}_final.npy'))
         print(f'[x] End Episode: {episode+1}] :: Return: {episode_return}, Steps: {episode_timesteps}')
@@ -284,14 +314,7 @@ def TEST(
         ax[0].legend()
         ax[1].legend()
         plt.show()
-    return average_return, total_steps, sehist, tehist
-
-
-
-
-
-
-
+    return average_return, total_steps, sehist, tehist, fighisti, fighistf
 
 def TEST2(
         env, 
@@ -315,10 +338,13 @@ def TEST2(
         last_n_steps=(20,20), last_deltas=(0.005, 0.005),
         initial_steps=0,
         ):
+    # for testing using two models
     if save_states:
         os.makedirs(save_states, exist_ok=True)
     sehist=[]
     tehist=[]
+    fighisti=[]
+    fighistf=[]
     renderer = RenderHandler(env, render_as=render_as, save_dpi=save_dpi, make_video=make_video,
                                             video_fps=video_fps, render_kwargs=render_kwargs, start_n=start_n )
     episode_max_steps = (steps if steps>0 else inf)
@@ -338,9 +364,7 @@ def TEST2(
     for episode in range(episodes):
         cs = env.reset(starting_state=starting_state) # reset
         done = False
-        if plot_end_states:
-            _=env.render(*render_kwargs)
-            plt.show()
+        if plot_end_states:fighisti.append(env.render(*render_kwargs))
         if save_states:
             env.save_state(os.path.join(save_states, f'{episode}_{save_prefix}_initial.npy'))
         print(f'\n[+] Begin Episode: {episode+1} of {episodes}')
@@ -418,9 +442,7 @@ def TEST2(
 
             renderer.Render() 
 
-        if plot_end_states:
-            _=env.render(*render_kwargs)
-            plt.show()
+        if plot_end_states: fighistf.append(env.render(*render_kwargs))
         if save_states:
             env.save_state(os.path.join(save_states, f'{episode}_{save_prefix}_final.npy'))
         print(f'[x] End Episode: {episode+1}] :: Return: {episode_return}, Steps: {episode_timesteps}')
@@ -450,6 +472,35 @@ def TEST2(
         ax[0].legend()
         ax[1].legend()
         plt.show()
-    return average_return, total_steps, sehist, tehist
+    return average_return, total_steps, sehist, tehist, fighisti, fighistf
 
 
+
+def log_evaluations(evaluations_path):
+    E = np.load(evaluations_path)
+    # E.files # ['timesteps', 'results', 'ep_lengths']
+    ts, res, epl = E['timesteps'], E['results'], E['ep_lengths']
+    # ts.shape, res.shape, epl.shape #<---- (eval-freq, n_eval_episodes)
+    resM, eplM = np.mean(res, axis=1), np.mean(epl, axis=1) # mean reward of all eval_episodes
+
+    fr=plt.figure(figsize=(8,4))
+    plt.scatter(ts, resM, color='green')
+    plt.plot(ts, resM, label='mean_val_reward', color='green')
+    plt.xlabel('step')
+    plt.ylabel('mean_val_reward')
+    plt.legend()
+    #plt.show()
+    #plt.close()
+
+
+    fs=plt.figure(figsize=(8,4))
+    plt.scatter(ts, eplM, color='blue')
+    plt.plot(ts, eplM, label='mean_episode_len', color='blue')
+    plt.xlabel('step')
+    plt.ylabel('mean_episode_len')
+    plt.legend()
+    #plt.show()
+    #plt.close()
+
+    E.close()
+    return fr, fs
