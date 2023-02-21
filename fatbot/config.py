@@ -8,7 +8,7 @@ common_default={
     'db':               db6,
     'global_isd':       'D',
     'horizon':          500,
-    'gamma':            0.99,
+    'gamma':            0.95,
     'target':           (0.0, 0.0, 12.0), # x, y, r
     'target_rand':      True,
     'reward_scheme':    'RA',
@@ -25,8 +25,8 @@ class RL:
         model_version = 'base'
 
         if test: 
-            scheme = 3 # 0=best, 1=final, 2=best_final, 3=best_final_checkpoints
-            episodes = 1
+            scheme = 1 # 0=best, 1=final, 2=best_final, 3=best_final_checkpoints
+            episodes = 3
             return model_name, model_version, model_algo, (scheme, episodes)
         
         # training timesteps

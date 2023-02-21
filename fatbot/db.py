@@ -1,5 +1,5 @@
 from .core import RewardSchemes
-from .core import World2 as World
+from .core import World as World
 from math import pi
 
 global_render_dpi = 48

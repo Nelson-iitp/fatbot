@@ -616,16 +616,16 @@ class World(gym.Env):
                   #  ( self.rng.uniform(-self.reset_noise, self.reset_noise, size=2) if self.reset_noise>0.0 else 0.0)
 
         if self.random_target:
-            rand_radius = self.rng.uniform(-1, 1)
+            #rand_radius = self.rng.uniform(-1, 1)
             rand_point = np.array( [
-                        self.rng.uniform(-self.X_RANGE, self.X_RANGE),
-                        self.rng.uniform(-self.Y_RANGE, self.Y_RANGE),
+                        self.rng.uniform(-self.X_RANGE*.75, self.X_RANGE*.75),
+                        self.rng.uniform(-self.Y_RANGE*.75, self.Y_RANGE*.75),
                         ] )
         else:
-            rand_radius=0.0
+            #rand_radius=0.0
             rand_point=0.0
 
-        self.TARGET_RADIUS = max(0, self.BASE_TARGET_RADIUS + rand_radius)
+        self.TARGET_RADIUS = self.BASE_TARGET_RADIUS #max(0, self.BASE_TARGET_RADIUS + rand_radius)
         self.TARGET_POINT = np.clip(self.BASE_TARGET_POINT + rand_point, self.POINT_CLIP_LOW, self.POINT_CLIP_HIGH)
         
         self.observation[:] = self.initial_observation # copy state vectors
