@@ -1,9 +1,6 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
-__archive__/
-__userdata__/
-__temp__/
-base_fatbot/
+__*__/
 *.py[cod]
 *$py.class
 
