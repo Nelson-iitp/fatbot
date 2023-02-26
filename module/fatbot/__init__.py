@@ -7,12 +7,11 @@ from stable_baselines3.common.callbacks import CallbackList, CheckpointCallback,
 #==============================================================
 
 import fatbot.common as common
-from fatbot.common import image2video, TEST, TEST2, FAKE
+from fatbot.common import image2video, TEST, TEST2, FAKE, pj, pjs, mkdir, create_dirs, now
 from fatbot.common import RandomPolicy, ZeroPolicy, REMAP, JSON, RenderHandler, log_evaluations
 
-import fatbot.db as db
-import fatbot.core as core
-from fatbot.core import World, RewardSchemes
 
+import fatbot.core as core
+from fatbot.core import World, ntWorld, SwarmState
 
 # ARCHIVE NOTE: this is the single agent version

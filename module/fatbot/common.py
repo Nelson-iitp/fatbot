@@ -222,6 +222,37 @@ class RenderHandler:
         del self.buffer
         print(f'[{__class__.__name__}]:: Stopped Video @ [{self.video_file_name}]')
 
+def pjs(*paths) -> str:
+    r""" Paths Join - shorthand for `os.path.join` """
+    return os.path.join('', *paths)
+
+def pj(path:str, sep:str='/') -> str: 
+    r""" Path Join - shorthand for `os.path.join`
+
+    .. note:: This is similar to :func:`~known.basic.pjs` but instead of taking multiple args,
+        takes a single string and splits it using the provided seperator.
+    """
+    return pjs(*path.split(sep))
+
+def mkdir(path): os.makedirs(path, exist_ok=True)
+
+def create_dirs(model_name, model_version, make=True):
+    eval_path = pjs(model_name, model_version)
+    if make:
+        mkdir(eval_path)
+    else:
+        assert os.path.exists(eval_path), f'eval path {eval_path} not found!'
+    checkpoint_path = pjs(eval_path,'checkpoints')
+    best_model_path = pjs(eval_path, 'best_model')
+    final_model_path = pjs(eval_path, 'final_model')
+    print(f'\nTraining Configuration:\n{model_name=}\n{model_version=}\n{eval_path=}\n')
+    return eval_path, checkpoint_path, best_model_path, final_model_path
+
+
+
+#===========================
+
+
 def TEST(
         env, 
         model=None, 
@@ -234,7 +265,6 @@ def TEST(
         video_fps=1,
         render_kwargs={},
         starting_state=None,
-        plot_results=0,
         start_n=0,
         reverb=0,
         plot_end_states=False,
@@ -263,9 +293,9 @@ def TEST(
     for episode in range(episodes):
         cs = env.reset(starting_state=starting_state) # reset
         done = False
-        if plot_end_states: fighisti.append(env.render(*render_kwargs))
+        if plot_end_states: fighisti.append(env.render(**render_kwargs))
         if save_states:
-            env.save_state(os.path.join(save_states, f'{episode}_{save_prefix}_initial.npy'))
+            env.save_state(os.path.join(save_states, f'{episode}_{save_prefix}_initial'))
         print(f'\n[+] Begin Episode: {episode+1} of {episodes}')
         
 
@@ -290,38 +320,22 @@ def TEST(
             if reverb: print(f'  [{episode_timesteps}/{done}]: Reward: {rew}')
             renderer.Render() 
 
-        if plot_end_states:fighistf.append(env.render(*render_kwargs))
+        if plot_end_states:fighistf.append(env.render(**render_kwargs))
             #plt.show()
         if save_states:
-            env.save_state(os.path.join(save_states, f'{episode}_{save_prefix}_final.npy'))
+            env.save_state(os.path.join(save_states, f'{episode}_{save_prefix}_final'))
         print(f'[x] End Episode: {episode+1}] :: Return: {episode_return}, Steps: {episode_timesteps}')
         sehist.append( max_return_at )
         tehist.append(episode_reward_history)
-        if (plot_results>1) and (episode_timesteps>1):
-            episode_reward_history=np.array(episode_reward_history)
-            fig, ax = plt.subplots(2, 1, figsize=(12,6))
-            fig.suptitle(f'Episode: {episode+1}')
-            ax[0].plot(episode_reward_history[:,0], label='Reward', color='tab:blue')
-            ax[1].plot(episode_reward_history[:,1], label='Return', color='tab:green')
-            ax[0].legend()
-            ax[1].legend()
-            plt.show()
         test_history.append((episode_timesteps, episode_return))
     # end episodes
     renderer.Stop() #<--- close renderer
     test_history=np.array(test_history)
     average_return = np.average(test_history[:, 1])
-    total_steps = np.sum(test_history[:, 0])
-    print(f'[--] End Epoch [{episodes}] episodes :: Avg Return: {average_return}, Total Steps: {total_steps}')
-    if (plot_results>0) and (episodes>1):
-        fig, ax = plt.subplots(2, 1, figsize=(12,6))
-        fig.suptitle(f'Test Results')
-        ax[0].plot(test_history[:,0], label='Steps', color='tab:purple')
-        ax[1].plot(test_history[:,1], label='Return', color='tab:green')
-        ax[0].legend()
-        ax[1].legend()
-        plt.show()
-    return average_return, total_steps, sehist, tehist, fighisti, fighistf
+    avg_steps = np.average(test_history[:, 0])
+    print(f'[--] End Epoch [{episodes}] episodes :: Avg Return: {average_return}, Avg Steps: {avg_steps}')
+
+    return average_return, avg_steps, sehist, tehist, test_history, fighisti, fighistf
 
 def TEST2(
         env, 
@@ -336,13 +350,12 @@ def TEST2(
         video_fps=1,
         render_kwargs={},
         starting_state=None,
-        plot_results=0,
         start_n=0,
         reverb=0,
         plot_end_states=False,
         save_states='',
         save_prefix='',
-        last_n_steps=(20,20), last_deltas=(0.005, 0.005),
+        last_n_steps=(50,50), last_deltas=(0.005, 0.005),
         initial_steps=0,
         ):
     # for testing using two models
@@ -371,9 +384,9 @@ def TEST2(
     for episode in range(episodes):
         cs = env.reset(starting_state=starting_state) # reset
         done = False
-        if plot_end_states:fighisti.append(env.render(*render_kwargs))
+        if plot_end_states:fighisti.append(env.render(**render_kwargs))
         if save_states:
-            env.save_state(os.path.join(save_states, f'{episode}_{save_prefix}_initial.npy'))
+            env.save_state(os.path.join(save_states, f'{episode}_{save_prefix}_initial'))
         print(f'\n[+] Begin Episode: {episode+1} of {episodes}')
         
 
@@ -449,39 +462,20 @@ def TEST2(
 
             renderer.Render() 
 
-        if plot_end_states: fighistf.append(env.render(*render_kwargs))
+        if plot_end_states: fighistf.append(env.render(**render_kwargs))
         if save_states:
-            env.save_state(os.path.join(save_states, f'{episode}_{save_prefix}_final.npy'))
+            env.save_state(os.path.join(save_states, f'{episode}_{save_prefix}_final'))
         print(f'[x] End Episode: {episode+1}] :: Return: {episode_return}, Steps: {episode_timesteps}')
         sehist.append( max_return_at )
         tehist.append(episode_reward_history)
-        if (plot_results>1) and (episode_timesteps>1):
-            episode_reward_history=np.array(episode_reward_history)
-            fig, ax = plt.subplots(2, 1, figsize=(12,6))
-            fig.suptitle(f'Episode: {episode+1}')
-            ax[0].plot(episode_reward_history[:,0], label='Reward', color='tab:blue')
-            ax[1].plot(episode_reward_history[:,1], label='Return', color='tab:green')
-            ax[0].legend()
-            ax[1].legend()
-            plt.show()
         test_history.append((episode_timesteps, episode_return))
     # end episodes
     renderer.Stop() #<--- close renderer
     test_history=np.array(test_history)
     average_return = np.average(test_history[:, 1])
-    total_steps = np.sum(test_history[:, 0])
-    print(f'[--] End Epoch [{episodes}] episodes :: Avg Return: {average_return}, Total Steps: {total_steps}')
-    if (plot_results>0) and (episodes>1):
-        fig, ax = plt.subplots(2, 1, figsize=(12,6))
-        fig.suptitle(f'Test Results')
-        ax[0].plot(test_history[:,0], label='Steps', color='tab:purple')
-        ax[1].plot(test_history[:,1], label='Return', color='tab:green')
-        ax[0].legend()
-        ax[1].legend()
-        plt.show()
-    return average_return, total_steps, sehist, tehist, fighisti, fighistf
-
-
+    avg_steps = np.average(test_history[:, 0])
+    print(f'[--] End Epoch [{episodes}] episodes :: Avg Return: {average_return}, Avg Steps: {avg_steps}')
+    return average_return, avg_steps, sehist, tehist, test_history, fighisti, fighistf
 
 def log_evaluations(evaluations_path):
     E = np.load(evaluations_path)
