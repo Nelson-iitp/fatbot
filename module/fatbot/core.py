@@ -15,17 +15,37 @@ class SwarmState:
     # describes a swarm initial state
     def __init__(self,
         target_point=None, # keep None for random target
+        target_range=((0.5, 0.5), (0.5, 0.5)), # if target_point is None, use target range to generate random point
         target_radius=0.0, # optional
         reset_noise=0.0, # reset noise in x-y direction
         points=None, # the coordinates of robots
         **kwargs):
         self.target_point=target_point
+        self.target_range = target_range
         self.target_radius=target_radius
         self.reset_noise=reset_noise
         assert points is not None, f'Initial coordinates missing!'
         self.points=points
         for k,v in kwargs.items(): setattr(self, k, v)
     
+    def render(self, x, y, figsize=(10,10)):
+        #plt.figure()
+        fig, ax = plt.subplots(nrows=1, ncols=1, figsize=figsize)
+        ax.set_xlim(-x, x)
+        ax.set_ylim(-y, y)
+        ax.scatter(self.target_point[0], self.target_point[1], color='black')
+        ax.add_patch( # speedometer
+            Circle(     ( self.target_point[0], self.target_point[1] ), 
+                        ( self.target_radius), color='black', linewidth=2.0, fill=False))
+                    
+        for point in self.points:
+            ax.scatter(point[0], point[1], color='green')
+            ax.add_patch( # speedometer
+                Circle(     ( point[0], point[1] ), 
+                            ( self.reset_noise*2), color='green', linewidth=1.0, fill=False))
+        plt.show()
+        return fig
+
     @staticmethod
     def points_from_img(path, x_range, y_range):
         # expects an image, extract the coordinates of black points
@@ -89,13 +109,16 @@ class World(gym.Env):
                     sensor_resolution=40,  # choose based on scan distance, use form: n/pi , pixel per m
                     min_bots_alive=0,     # min no. bots alive, below which world will terminate # keep zero for all alive condition
                     record_state_history=0,
+                    frozen=False, # if true, resets to initial states in order
+                    observe_target=True, # if True, target point is the part of observation
                     record_reward_hist=True, render_normalized_reward=True,
                     render_xray_cmap='hot', render_dray_cmap='copper',  render_dpi=None,
                     render_figure_ratio=0.4, render_bounding_width=0.05) -> None:
         super().__init__()
         self.name = name
+        self.selected_initial_state = -1
         self.X_RANGE, self.Y_RANGE = float(x_range), float(y_range)
-
+        self.observe_target=observe_target
         self.POINT_CLIP_LOW = np.array([-self.X_RANGE, -self.Y_RANGE])
         self.POINT_CLIP_HIGH = np.array([self.X_RANGE, self.Y_RANGE])
         self.N_BOTS = int(n_bots)
@@ -125,6 +148,7 @@ class World(gym.Env):
         self.record_state_history=record_state_history
         
         self.initial_states=[]
+        self.frozen=frozen
 
         # for rendering
         self.render_xray_cmap = render_xray_cmap
@@ -213,20 +237,32 @@ class World(gym.Env):
             high =   (position_space_info['high']  + neighbour_space_info['high'] )
             odim = 4
 
-
-        self.e_dim = 3
-        self.observation_space = get_espace(n=self.N_BOTS, dtype=self.STATE_DTYPE,
-            shape = shape,
-            edim = self.e_dim, # for x and y target point and ratget radius
-            low = low,
-            high = high,
-            elow = (-self.X_RANGE, -self.Y_RANGE, 0),
-            ehigh = (self.X_RANGE, self.Y_RANGE, max(self.X_RANGE, self.Y_RANGE))
-            )
         self.o_dim = odim 
+        self.e_dim = 3
+        if not self.observe_target:
+            self.observation_space = get_nspace(n=self.N_BOTS, dtype=self.STATE_DTYPE,
+                shape = shape,
+                low = low,
+                high = high,
+                )
+        else:
+            self.observation_space = get_espace(n=self.N_BOTS, dtype=self.STATE_DTYPE,
+                shape = shape,
+                edim = self.e_dim, # for x and y target point and ratget radius
+                low = low,
+                high = high,
+                elow = (-self.X_RANGE, -self.Y_RANGE, 0),
+                ehigh = (self.X_RANGE, self.Y_RANGE, max(self.X_RANGE, self.Y_RANGE))
+                )
+            
         self.base_observation = np.zeros(self.observation_space.shape, self.observation_space.dtype)
-        self.target_observation = self.base_observation[-self.e_dim:]
-        self.observation = self.base_observation[0:-self.e_dim].reshape((self.N_BOTS, self.o_dim))
+        if not self.observe_target:
+            self.target_observation = np.zeros(shpae=(self.e_dim,), dtype=self.STATE_DTYPE)
+            self.observation = self.base_observation.reshape((self.N_BOTS, self.o_dim))
+        else:
+            self.target_observation = self.base_observation[-self.e_dim:]
+            self.observation = self.base_observation[0:-self.e_dim].reshape((self.N_BOTS, self.o_dim))
+
         self.initial_observation = np.zeros_like(self.observation)
 
         # define observation views
@@ -507,6 +543,7 @@ class World(gym.Env):
     def save_state(self, path):
         state = SwarmState(
             target_point=tuple(self.TARGET_POINT),
+            target_range=None,
             target_radius=float(self.TARGET_RADIUS),
             reset_noise=self.initial_state.reset_noise,
             points=[ tuple(p) for p in self.observation[:, 0:2] ],
@@ -525,8 +562,14 @@ class World(gym.Env):
         
         if starting_state is None:
             # reset - choose randomly from known initial state distribution 
-            self.initial_state = self.initial_states[self.rng.integers(0, len(self.initial_states))]
+            if self.frozen:
+                self.selected_initial_state = (self.selected_initial_state +1)%len(self.initial_states)
+            else:
+                self.selected_initial_state = self.rng.integers(0, len(self.initial_states))
+
+            self.initial_state = self.initial_states[self.selected_initial_state]
         else:
+            self.selected_initial_state = -1
             self.initial_state = starting_state
 
         for i,p in  enumerate(self.initial_state.points):
@@ -535,9 +578,10 @@ class World(gym.Env):
                  if self.initial_state.reset_noise!=0 else 0.0)
 
         if self.initial_state.target_point is None:
+            tx, ty =  ((1,1), (1,1)) if self.initial_state.target_range is None else self.initial_state.target_range
             rand_point = np.array( [
-                        self.rng.uniform(-self.X_RANGE*.8, self.X_RANGE*.8),
-                        self.rng.uniform(-self.Y_RANGE*.8, self.Y_RANGE*.8),
+                        self.rng.uniform(-self.X_RANGE*tx[0], self.X_RANGE*tx[1]),
+                        self.rng.uniform(-self.Y_RANGE*ty[0], self.Y_RANGE*ty[1]),
                         ] )
 
         else:
@@ -859,7 +903,7 @@ class World(gym.Env):
         return fig
     
     #==============================================================
-    def render(self, local_sensors=True, reward_signal=True, fill_bots=False, state_hist_marker='o'):
+    def render(self, local_sensors=True, reward_signal=True, fill_bots=False, state_hist_marker='o', show_com=False, shadow_vectors=False):
 
         if local_sensors:
             if reward_signal:
@@ -957,15 +1001,25 @@ class World(gym.Env):
         ax.vlines(self.X_RANGE,  -self.Y_RANGE, self.Y_RANGE,  color='black', linewidth=0.5, linestyle='dashed'  )
         ax.hlines(-self.Y_RANGE,  -self.X_RANGE, self.X_RANGE,  color='black', linewidth=0.5, linestyle='dashed'  )
         ax.hlines(self.Y_RANGE,  -self.X_RANGE, self.X_RANGE,  color='black', linewidth=0.5, linestyle='dashed'  )
+
+        if show_com: 
+            mx, my = np.mean(self.x), np.mean(self.y)
+            ax.scatter([mx], [my], color='black', marker='o')
+            if show_com>1:
+                ax.add_patch( # target circle
+                    Circle(   ( mx, my ), ( self.BOT_RADIUS ),color='black', linewidth=0.5, fill=False, linestyle='dashed'))
+
         # axis
         #ax.vlines(0, -self.Y_RANGE, self.Y_RANGE, color='black', linewidth=0.5, linestyle='dashed' )
         #ax.hlines(0, -self.X_RANGE, self.X_RANGE, color='black', linewidth=0.5, linestyle='dashed')
-        ax.vlines(self.TARGET_POINT[0], -self.Y_RANGE, self.Y_RANGE, color='black', linewidth=0.5, linestyle='solid' )
-        ax.hlines(self.TARGET_POINT[1], -self.X_RANGE, self.X_RANGE, color='black', linewidth=0.5, linestyle='solid')
+        if self.observe_target:
+            ax.vlines(self.TARGET_POINT[0], -self.Y_RANGE, self.Y_RANGE, color='black', linewidth=0.5, linestyle='solid' )
+            ax.hlines(self.TARGET_POINT[1], -self.X_RANGE, self.X_RANGE, color='black', linewidth=0.5, linestyle='solid')
 
-        if self.TARGET_RADIUS>0:
-            ax.add_patch( # target circle
-                Circle(   ( self.TARGET_POINT[0], self.TARGET_POINT[1] ), ( self.TARGET_RADIUS ),color='black', linewidth=0.5, fill=False, linestyle='dashed'))
+            if self.TARGET_RADIUS>0:
+                ax.add_patch( # target circle
+                    Circle(   ( self.TARGET_POINT[0], self.TARGET_POINT[1] ), ( self.TARGET_RADIUS ),
+                           color='black', linewidth=0.5, fill=False, linestyle='dashed'))
 
         self.render_state_hook(ax)# call the hook now
 
@@ -1029,15 +1083,17 @@ class World(gym.Env):
                         xytext=(botx, boty), xy=( tx, ty ),
                         arrowprops=dict(arrowstyle="->", linewidth=0.8, linestyle='dotted', color=('red' if isocc else 'grey')))
 
-                    # ax.annotate("", 
-                    #     #xytext="+",
-                    #     xytext=(botx, boty), xy=(botx + xn, boty +yn ),
-                    #     arrowprops=dict(arrowstyle="->", linewidth=0.4, linestyle='solid', color=botcolor))
-                    # ax.annotate("", 
-                    #     #xytext="+",
-                    #     xytext=(botx, boty), xy=( botx + xp, boty + yp),
-                    #     arrowprops=dict(arrowstyle="->", linewidth=0.4, linestyle='solid', color=botcolor))
-        #--------------------------------------------------------------------------------------------------------------
+                    if shadow_vectors:
+                        ax.annotate("", 
+                            #xytext="+",
+                            xytext=(botx, boty), xy=(botx + xn, boty +yn ),
+                            arrowprops=dict(arrowstyle="->", linewidth=0.4, linestyle='solid', color=botcolor))
+                        ax.annotate("", 
+                            #xytext="+",
+                            xytext=(botx, boty), xy=( botx + xp, boty + yp),
+                            arrowprops=dict(arrowstyle="->", linewidth=0.4, linestyle='solid', color=botcolor))
+            
+                    #--------------------------------------------------------------------------------------------------------------
 
         # ============================================================================================================
         # draw signals on right
@@ -1110,200 +1166,3 @@ class World(gym.Env):
     #==============================================================
     def render_state_hook(self, ax):
         pass # <---- use 'ax' to render target points
-
-
-class ntWorld(World):
-        
-    def build_observation_space(self):
-        # now define observation_space ----------------------------------------------------------------------------
-        position_space_info = {  # Position/Direction x,y
-                        'dim': 2,
-                        'low': (-self.X_RANGE, -self.Y_RANGE), 
-                        'high':( self.X_RANGE, self.Y_RANGE), 
-                    }
-        self.force_clip_low = np.array((-self.X_RANGE, -self.Y_RANGE), dtype= self.STATE_DTYPE)
-        self.force_clip_high= np.array((self.X_RANGE, self.Y_RANGE), dtype= self.STATE_DTYPE)
-        velocity_space_info = { # velocities dx, dy
-                        'dim': 2,
-                        'low': (-self.SPEED_LIMIT, -self.SPEED_LIMIT), 
-                        'high':( self.SPEED_LIMIT,  self.SPEED_LIMIT), 
-                    }
-        neighbour_space_info = { # total_neighbours, # occluded neighbours
-                        'dim': 2,  
-                        'low': (0,             0,         ), 
-                        'high':(self.N_BOTS-1, self.N_BOTS-2), 
-                    }
-
-        sensor_space_info = { # ( dis, arch, arcl, arcm ) * n_bots-1
-                        'dim': (self.N_BOTS-1) * 4,  
-                        'low': tuple(np.array([(0, 0, 0, 0) for _ in range(self.N_BOTS-1)]).flatten()), 
-                        'high': tuple(np.array([(max(self.X_RANGE, self.Y_RANGE), 2*pi, 2*pi, 2*pi) for _ in range(self.N_BOTS-1)]).flatten()), 
-                    }
-        # if False:
-        #     self.observation_space = get_nspace(n=self.N_BOTS, dtype=self.STATE_DTYPE,
-        #                 shape = (position_space_info['dim']   + velocity_space_info['dim']  + neighbour_space_info['dim'] + sensor_space_info['dim'], ),
-        #                 low=    (position_space_info['low']     + velocity_space_info['low']   + neighbour_space_info['low'] + sensor_space_info['low']  ),
-        #                 high=   (position_space_info['high']    + velocity_space_info['high']   + neighbour_space_info['high'] + sensor_space_info['high'] ))
-            
-        #     self.o_dim = 6 + ((self.N_BOTS-1) * 4)
-        # else:
-        if self.delta_action_mode:
-            shape = (position_space_info['dim']   + velocity_space_info['dim']  + neighbour_space_info['dim'] , )
-            low=    (position_space_info['low']     + velocity_space_info['low']   + neighbour_space_info['low']   )
-            high =   (position_space_info['high']    + velocity_space_info['high']   + neighbour_space_info['high'] )
-            odim = 6
-        else: # dont include velocities in observation space
-            shape = (position_space_info['dim']   +  neighbour_space_info['dim'] , )
-            low=    (position_space_info['low']   +  neighbour_space_info['low']   )
-            high =   (position_space_info['high']  + neighbour_space_info['high'] )
-            odim = 4
-
-
-        #self.e_dim = 3
-        self.observation_space = get_nspace(n=self.N_BOTS, dtype=self.STATE_DTYPE,
-            shape = shape,
-            low = low,
-            high = high,
-            )
-        self.o_dim = odim 
-        self.base_observation = np.zeros(self.observation_space.shape, self.observation_space.dtype)
-        #self.target_observation = self.base_observation[-self.e_dim:]
-        self.observation = self.base_observation.reshape((self.N_BOTS, self.o_dim))
-        self.initial_observation = np.zeros_like(self.observation)
-
-        # define observation views
-        self.xy =           self.observation [:, 0:2] # x,y
-        self.x =            self.observation [:, 0:1] # x
-        self.y =            self.observation [:, 1:2] # y
-
-        if self.delta_action_mode:
-            self.dxy =           self.observation [:, 2:4] # dx,dy
-            self.dx =            self.observation [:, 2:3] # dx
-            self.dy =            self.observation [:, 3:4] # dy
-
-            self.alln =            self.observation[:, 4:5]
-            self.occn =            self.observation[:, 5:6]
-        else:
-            self.dxy =           np.zeros_like(self.xy) # dx, dy
-            self.dx =            self.dxy [:, 0:1] # dx
-            self.dy =            self.dxy [:, 1:2] # dy
-
-            self.alln =            self.observation[:, 2:3]
-            self.occn =            self.observation[:, 3:4]
-
-        #self.sense =            self.observation[:, 6:].reshape((self.N_BOTS, (self.N_BOTS-1) , 4))
-        self.sense =            np.zeros((self.N_BOTS, (self.N_BOTS-1) , 4), dtype=self.STATE_DTYPE)
-        
-        return
-
-
-    def reset(self, starting_state=None):
-
-        self.episode += 1
-        
-        if starting_state is None:
-            # reset - choose randomly from known initial state distribution 
-            self.initial_state = self.initial_states[self.rng.integers(0, len(self.initial_states))]
-        else:
-            self.initial_state = starting_state
-
-        if self.initial_state.target_point is None:
-            rand_point = np.array( [
-                        self.rng.uniform(-self.X_RANGE*.5, self.X_RANGE*.5),
-                        self.rng.uniform(-self.Y_RANGE*.5, self.Y_RANGE*.5),
-                        ] )
-
-        else:
-            rand_point=np.array(self.initial_state.target_point)
-
-        #self.initial_observation*=0 < not nessesroy
-        for i,p in  enumerate(self.initial_state.points):
-            self.initial_observation[i, 0:2] = (np.array(p[0:2]) - rand_point) + \
-                ( self.rng.uniform(-self.initial_state.reset_noise, self.initial_state.reset_noise) \
-                 if self.initial_state.reset_noise!=0 else 0.0)
-
-        self.TARGET_RADIUS = self.initial_state.target_radius
-        self.TARGET_POINT = np.zeros(shape=(2,), dtype=self.STATE_DTYPE)
-        
-        self.observation[:] = self.initial_observation # copy state vectors
-        #self.target_observation[0:2] = self.TARGET_POINT
-        #self.target_observation[2] = self.TARGET_RADIUS 
-        self.alive[:]=True # all robots alive flag
-        self.n_alive = np.sum(self.alive)
-        if self.enable_state_hist: 
-            self.state_hist.clear()
-            #self.state_hist_count=0
-            self.state_hist.append(np.copy(self.xy))
-            self.state_hist_count=1
-        self.actuator*=0 # reset actuator
-        # update state variables----------------------
-        self.update_distances()
-        self.update_sensor_data()
-        #---------------------------------------------
-
-        self.reward_signal[:] = self.get_reward_signal()
-        self.reward_signal_sum = np.sum(self.reward_signal)
-        self.step_reward = 0.0
-        self.cummulative_reward = 0.0
-        self.ts=0
-        self.terminal = self.is_terminal()
-        self.timeout = self.is_timeout()
-        self.done = self.terminal or self.timeout
-        if self.record_reward_hist:
-            self.reward_hist = [ [],[],[]
-                #[self.reward_signal_sum ], 
-                #[self.step_reward], 
-                #[self.cummulative_reward]
-                ] # signal sum, current reward, cumm reward
-        
-        return self.base_observation
-    
-""" ARCHIVE
-class World2(World):
-
-    unit_pull = 0.5 # should be less than speed limit
-    def build_vectors(self):
-        super().build_vectors()
-        #self.unit_vector_target = np.zeros_like(self.xy)
-
-    def step(self, action):
-        self.read_actuators(action)
-        #--------------------
-        # calculate unit vector along the target point
-        dt = self.TARGET_POINT - self.xy
-        nt = np.linalg.norm(dt, 2, axis=-1, keepdims=True)
-        ut = (dt/nt)*self.unit_pull
-        self.δxy += ut
-        #--------------------
-        return self.take_action()
-
-
-
-
-    def render_sensor_image(self, n, use_xray=False, show_ticks=True):
-        if not self.enable_imaging:
-            return None, ""
-        fig,_ = plt.figure()
-        if show_ticks:
-            plt.xticks(self.arcTicks[:,0], self.arcTicks[:,1] )
-            
-            plt.grid(axis='both')
-
-        if use_xray:
-            plt.imshow(np.reshape( (self.img_xray[n, :]), (1, self.SENSOR_IMAGE_SIZE) ), aspect=self.img_aspect, 
-                            cmap= self.render_xray_cmap, vmin= 0, vmax= self.N_BOTS ) 
-            arcm = np.where(self.img_oray[n]>0)[0]
-            for arcpt in arcm:
-                plt.scatter( [arcpt], [0], color='white', marker='d') # self.img_oray[n,arcpt:arcpt+1]
-                # f'${self.img_oray[n,arcpt]}$'
-                plt.annotate(f'{self.img_oray[n,arcpt]}', xy=(arcpt,0.4))
-            plt.title("X-Ray: "+self.names[n])
-        else:
-            plt.imshow(np.reshape( (self.img_dray[n, :]), (1, self.SENSOR_IMAGE_SIZE) ), aspect=self.img_aspect, 
-                            cmap= self.render_dray_cmap, vmin= 0, vmax= self.SCAN_RADIUS )
-            plt.title("D-Ray: "+self.names[n])
-        
- 
-        return fig, "render_sensor_image_local"
-
-"""

@@ -6,7 +6,7 @@ setup(
     author =                    'Nelson.S',
     author_email =              'nelson_2121cs07@iitp.ac.in',
     description =               'Module :: fatbot',
-    packages =                  ['fatbot'],
+    packages =                  ['fatbot', 'experiments'],
     classifiers=                ['License :: OSI Approved :: MIT License'],
     package_dir =               { '' : 'module'},
     install_requires =          [],

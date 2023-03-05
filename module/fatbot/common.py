@@ -112,6 +112,41 @@ class ZeroPolicy:
     def predict(self, observation, **kwargs): # state=None, episode_start=None, deterministic=True
         return self.zero, None
     
+
+class ZenPolicy:
+    def __init__(self, action_space) -> None:
+        self.action_space = action_space
+        
+        self.zero = self.action_space.sample()*0.0
+        self.n_bots = int(len(self.zero)/2)
+
+    def predict(self, observation, **kwargs): # state=None, episode_start=None, deterministic=True
+        # find center of mass of all robots
+        #print(f'{observation.shape=}, {self.n_bots=}')
+        assert(len(observation.shape)==1)
+        assert(observation.shape[0]==self.n_bots*4+3), f'PREDICT ERROR - {observation.shape=}, {self.n_bots=}'
+        obs = observation[0:self.n_bots*4].reshape(self.n_bots, 4)[:,0:2]
+        mobs=np.mean(obs, axis=0)
+        #print(f'{mobs=}')
+        # how far from target?
+        tgt = observation[self.n_bots*4:-1] # x, y, r
+        diff = tgt - mobs
+        #print(f'{diff=} {tgt=}')
+        dx, dy = diff[0], diff[1]
+        modxy = np.linalg.norm(diff, 2)
+        if modxy==0:
+            ddx, ddy = 0, 0
+        else:
+            ddx, ddy = dx/modxy, dy/modxy
+        act = np.zeros_like(self.zero).reshape(self.n_bots,2)
+
+        #act[:,0] = (abs(dx)/dx) if abs(dx)>=1 else dx #dx/modxy #
+        #act[:,1] = (abs(dy)/dy) if abs(dy)>=1 else dy #dy/modxy#
+        act[:,0] =  ddx if modxy>=1 else dx #dx/modxy #
+        act[:,1] =  ddy if modxy>=1 else dy #dy/modxy#
+        return act.flatten(), None
+    
+
 class REMAP:
     def __init__(self,Input_Range, Mapped_Range) -> None:
         self.input_range(Input_Range)
@@ -235,18 +270,6 @@ def pj(path:str, sep:str='/') -> str:
     return pjs(*path.split(sep))
 
 def mkdir(path): os.makedirs(path, exist_ok=True)
-
-def create_dirs(model_name, model_version, make=True):
-    eval_path = pjs(model_name, model_version)
-    if make:
-        mkdir(eval_path)
-    else:
-        assert os.path.exists(eval_path), f'eval path {eval_path} not found!'
-    checkpoint_path = pjs(eval_path,'checkpoints')
-    best_model_path = pjs(eval_path, 'best_model')
-    final_model_path = pjs(eval_path, 'final_model')
-    print(f'\nTraining Configuration:\n{model_name=}\n{model_version=}\n{eval_path=}\n')
-    return eval_path, checkpoint_path, best_model_path, final_model_path
 
 
 
@@ -379,6 +402,7 @@ def TEST2(
     renderer.Start()
     episodes = (episodes if episodes>1 else 1)
     test_history = []
+    switch_history = []
     print(f'\n[++] Begin Epoch: Running for {episodes} episodes')
     #last_n_step=20, last_delta=0.005
     for episode in range(episodes):
@@ -449,6 +473,7 @@ def TEST2(
                     
                     if switch_model:
                         print('Switch model')
+                        switch_history.append(episode_timesteps)
                         model=model2
                         switch_model=False
                         arew.clear()
@@ -468,6 +493,8 @@ def TEST2(
         print(f'[x] End Episode: {episode+1}] :: Return: {episode_return}, Steps: {episode_timesteps}')
         sehist.append( max_return_at )
         tehist.append(episode_reward_history)
+        #if len(tehist)!=len(switch_history): switch_history.append(episode_timesteps)
+
         test_history.append((episode_timesteps, episode_return))
     # end episodes
     renderer.Stop() #<--- close renderer
@@ -475,7 +502,161 @@ def TEST2(
     average_return = np.average(test_history[:, 1])
     avg_steps = np.average(test_history[:, 0])
     print(f'[--] End Epoch [{episodes}] episodes :: Avg Return: {average_return}, Avg Steps: {avg_steps}')
-    return average_return, avg_steps, sehist, tehist, test_history, fighisti, fighistf
+    return average_return, avg_steps, sehist, tehist, test_history, fighisti, fighistf, switch_history
+
+
+
+
+def TEST3(
+        env, 
+        model1=None, 
+        model2=None,
+        episodes=1, 
+        steps=0, 
+        deterministic=True, 
+        render_as='', 
+        save_dpi='figure', 
+        make_video=False,
+        video_fps=1,
+        render_kwargs={},
+        starting_state=None,
+        start_n=0,
+        reverb=0,
+        plot_end_states=False,
+        save_states='',
+        save_prefix='',
+        last_n_steps=(50,50), last_deltas=(0.005, 0.005),
+        initial_steps=0,
+        final_steps=0,
+        decay_2=False,
+        ):
+    # for testing using two models
+    if save_states:
+        os.makedirs(save_states, exist_ok=True)
+    sehist=[]
+    tehist=[]
+    fighisti=[]
+    fighistf=[]
+    fiswitch=[]
+    renderer = RenderHandler(env, render_as=render_as, save_dpi=save_dpi, make_video=make_video,
+                                            video_fps=video_fps, render_kwargs=render_kwargs, start_n=start_n )
+    episode_max_steps = (steps if steps>0 else inf)
+    print(f'[.] Testing for [{episodes}] episodes @ [{episode_max_steps}] steps')
+    if model1 is None:
+        print('[!] No model1 provided - Using random actions')
+        model1 = RandomPolicy(env.action_space)
+    if model2 is None:
+        print('[!] No model2 provided - Using random actions')
+        model2 = RandomPolicy(env.action_space)
+
+    model3 = ZenPolicy(env.action_space)
+    # start episodes
+    renderer.Start()
+    episodes = (episodes if episodes>1 else 1)
+    test_history = []
+    switch_history = []
+    print(f'\n[++] Begin Epoch: Running for {episodes} episodes')
+    #last_n_step=20, last_delta=0.005
+    for episode in range(episodes):
+        cs = env.reset(starting_state=starting_state) # reset
+        done = False
+        if plot_end_states:fighisti.append(env.render(**render_kwargs))
+        if save_states:
+            env.save_state(os.path.join(save_states, f'{episode}_{save_prefix}_initial'))
+        print(f'\n[+] Begin Episode: {episode+1} of {episodes}')
+        
+
+        episode_return = 0.0
+        episode_timesteps = 0
+        episode_reward_history = []
+        max_return = -np.inf
+        max_return_at = -1
+                
+        renderer.Render()  #<--- open renderer and do 1st render
+        model = model1
+        arew = []
+        switch_model=0
+        eps_decay = 1.0
+        last_n_step = last_n_steps[0]
+        last_delta = last_deltas[0]
+        decay_by = 1/(last_n_steps[1]*2)
+        zstate = env.action_space.sample()*0
+        while (not done) and (episode_timesteps<initial_steps):
+            episode_timesteps+=1
+            env.step(zstate)
+            renderer.Render() 
+        episode_timesteps=0
+        while (not done) and (episode_timesteps<episode_max_steps):
+            action, _ = model.predict(cs, deterministic=deterministic) # action = env.action_space.sample() #print(action)
+            if decay_2 and switch_model==1:
+                action*=eps_decay
+                eps_decay=max(0.0, eps_decay-decay_by)
+            cs, rew, done , _ = env.step(action)
+            episode_return += rew
+            episode_reward_history.append((rew, episode_return))
+            arew.append(rew)
+            if episode_return>max_return:
+                max_return=episode_return
+                max_return_at=episode_timesteps
+
+            episode_timesteps+=1
+            if reverb: print(f'  [{episode_timesteps}/{done}]: Reward: {rew}')
+            if switch_model<2:
+                if len(arew)>=last_n_step:
+                    avgrew = np.average(arew)
+                    del(arew[0])
+
+                    if abs(avgrew)<=last_delta:
+                        
+                        if switch_model==0:
+                            print('Switch to aux')
+                            if plot_end_states:fiswitch.append(env.render(**render_kwargs))
+                            switch_history.append(episode_timesteps)
+                            model=model2
+                            switch_model=1
+                            arew.clear()
+                            last_n_step = last_n_steps[1]
+                            last_delta = last_deltas[1]
+                        else:
+                            #print('Early Stop')
+                            #done = True
+                            print('Switch to zen')
+                            switch_history.append(episode_timesteps)
+                            model=model3
+                            switch_model=2
+                            arew.clear()
+                            last_n_step = None
+                            last_delta = None
+            else:
+                lrew = arew[-1]
+                if abs(lrew) < 0.000001:
+                    if len(arew)>final_steps:
+                        print('Early Stop')
+                        done = True    
+                else:
+                    _=arew.pop(0)
+
+
+
+
+            renderer.Render() 
+
+        if plot_end_states: fighistf.append(env.render(**render_kwargs))
+        if save_states:
+            env.save_state(os.path.join(save_states, f'{episode}_{save_prefix}_final'))
+        print(f'[x] End Episode: {episode+1}] :: Return: {episode_return}, Steps: {episode_timesteps}')
+        sehist.append( max_return_at )
+        tehist.append(episode_reward_history)
+        test_history.append((episode_timesteps, episode_return))
+    # end episodes
+    renderer.Stop() #<--- close renderer
+    test_history=np.array(test_history)
+    average_return = np.average(test_history[:, 1])
+    avg_steps = np.average(test_history[:, 0])
+    print(f'[--] End Epoch [{episodes}] episodes :: Avg Return: {average_return}, Avg Steps: {avg_steps}')
+    return average_return, avg_steps, sehist, tehist, test_history, fighisti, fighistf, fiswitch, switch_history
+
+
 
 def log_evaluations(evaluations_path):
     E = np.load(evaluations_path)
